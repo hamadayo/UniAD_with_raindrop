@@ -12,19 +12,20 @@ def nuscenes_data_prep(root_path,
                        dataset_name,
                        out_dir,
                        max_sweeps=10):
-    """Prepare data related to nuScenes dataset.
+    """
+    nuScenesデータセットに関連するデータを準備します。
 
-    Related data consists of '.pkl' files recording basic infos,
-    2D annotations and groundtruth database.
+    関連データには、基本情報、2Dアノテーション、およびグラウンドトゥルースデータベースを記録した「.pkl」ファイルが含まれます。
 
     Args:
-        root_path (str): Path of dataset root.
-        info_prefix (str): The prefix of info filenames.
-        version (str): Dataset version.
-        dataset_name (str): The dataset class name.
-        out_dir (str): Output directory of the groundtruth database info.
-        max_sweeps (int): Number of input consecutive frames. Default: 10
+        root_path (str): データセットのルートパス。（./data/nuscenes)
+        info_prefix (str): 情報ファイル名のプレフィックス。(nuscenes)
+        version (str): データセットのバージョン。(v1.0-mini)
+        dataset_name (str): データセットクラスの名前。(NuScenesDataset)
+        out_dir (str): グラウンドトゥルースデータベース情報の出力ディレクトリ。(./data/infos)
+        max_sweeps (int): 入力として使用する連続フレーム数。デフォルト: 10
     """
+    # データセットの情報をpklファイルに保存
     nuscenes_converter.create_nuscenes_infos(
         root_path, out_dir, can_bus_root_path, info_prefix, version=version, max_sweeps=max_sweeps)
 
@@ -81,15 +82,15 @@ args = parser.parse_args()
 
 if __name__ == '__main__':
     if args.dataset == 'nuscenes' and args.version != 'v1.0-mini':
-        train_version = f'{args.version}-trainval'
-        nuscenes_data_prep(
-            root_path=args.root_path,
-            can_bus_root_path=args.canbus,
-            info_prefix=args.extra_tag,
-            version=train_version,
-            dataset_name='NuScenesDataset',
-            out_dir=args.out_dir,
-            max_sweeps=args.max_sweeps)
+        # train_version = f'{args.version}-trainval'
+        # nuscenes_data_prep(
+        #     root_path=args.root_path,
+        #     can_bus_root_path=args.canbus,
+        #     info_prefix=args.extra_tag,
+        #     version=train_version,
+        #     dataset_name='NuScenesDataset',
+        #     out_dir=args.out_dir,
+        #     max_sweeps=args.max_sweeps)
         test_version = f'{args.version}-test'
         nuscenes_data_prep(
             root_path=args.root_path,
