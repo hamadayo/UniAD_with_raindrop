@@ -121,7 +121,7 @@ def get_available_scenes(nusc):
     """
     available_scenes = []
     camera_types = [
-        'CAM_FRONT',
+        # 'CAM_FRONT',
         # 'CAM_FRONT_RIGHT',
         # 'CAM_FRONT_LEFT',
         # 'CAM_BACK',
@@ -138,42 +138,42 @@ def get_available_scenes(nusc):
         # シーンの最初のサンプルを取得
         sample_rec = nusc.get('sample', scene_rec['first_sample_token'])
         # サンプルに対応するlidarデータを取得
-        # sd_rec = nusc.get('sample_data', sample_rec['data']['LIDAR_TOP'])
+        sd_rec = nusc.get('sample_data', sample_rec['data']['LIDAR_TOP'])
         has_more_frames = True
         scene_not_exist = False
         while has_more_frames:
-            #　カメラデータの存在確認
-            for cam in camera_types:
-                if cam not in sample_rec['data']:
-                    scene_not_exist = True
-                    break
-                cam_token = sample_rec['data'][cam]
-                print(cam_token)
-                cam_sd_rec = nusc.get('sample_data', cam_token)
-                print(cam_sd_rec)
-                cam_path = str(nusc.get_sample_data_path(cam_sd_rec['token']))
-                print(cam_path)
-                if not mmcv.is_filepath(cam_path):
-                    scene_not_exist = True
-                    print('scene not exist')
-                    break
-            if scene_not_exist:
-                break
+            # #　カメラデータの存在確認
+            # for cam in camera_types:
+            #     if cam not in sample_rec['data']:
+            #         scene_not_exist = True
+            #         break
+            #     cam_token = sample_rec['data'][cam]
+            #     # print(cam_token)
+            #     cam_sd_rec = nusc.get('sample_data', cam_token)
+            #     # print(cam_sd_rec)
+            #     cam_path = str(nusc.get_sample_data_path(cam_sd_rec['token']))
+            #     # print(cam_path)
+            #     if not mmcv.is_filepath(cam_path):
+            #         scene_not_exist = True
+            #         print('scene not exist')
+            #         break
+            # if scene_not_exist:
+            #     break
 
             # lidarデータのファイルパスが存在しない場合、シーンが存在しないと判断
-            # lidar_path, boxes, _ = nusc.get_sample_data(sd_rec['token'])
-            # lidar_path = str(lidar_path)
-        #     if os.getcwd() in lidar_path:
-        #         # path from lyftdataset is absolute path
-        #         lidar_path = lidar_path.split(f'{os.getcwd()}/')[-1]
-        #         # relative path
-        #     if not mmcv.is_filepath(lidar_path):
-        #         scene_not_exist = True
-        #         break
-        #     else:
-        #         break
-        # if scene_not_exist:
-        #     continue
+            lidar_path, boxes, _ = nusc.get_sample_data(sd_rec['token'])
+            lidar_path = str(lidar_path)
+            if os.getcwd() in lidar_path:
+                # path from lyftdataset is absolute path
+                lidar_path = lidar_path.split(f'{os.getcwd()}/')[-1]
+                # relative path
+            if not mmcv.is_filepath(lidar_path):
+                scene_not_exist = True
+                break
+            else:
+                break
+        if scene_not_exist:
+            continue
         available_scenes.append(scene)
     print('exist scene num: {}'.format(len(available_scenes)))
     return available_scenes
