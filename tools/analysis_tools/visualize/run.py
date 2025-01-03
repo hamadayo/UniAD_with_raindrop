@@ -25,7 +25,8 @@ class Visualizer:
     """
     BaseRender class
     """
-
+    
+    # 初期値の設定
     def __init__(
             self,
             dataroot='/mnt/petrelfs/yangjiazhi/e2e_proj/data/nus_mini',
@@ -59,7 +60,9 @@ class Visualizer:
         self.veh_id_list = [0, 1, 2, 3, 4, 6, 7]
         self.use_json = '.json' in predroot
         self.token_set = set()
+        # 予測結果の読み込み
         self.predictions = self._parse_predictions_multitask_pkl(predroot)
+        # bevとカメラ視点の描画のためのオブジェクトを作成
         self.bev_render = BEVRender(show_gt_boxes=show_gt_boxes)
         self.cam_render = CameraRender(show_gt_boxes=show_gt_boxes)
 
@@ -73,12 +76,15 @@ class Visualizer:
 
     def _parse_predictions_multitask_pkl(self, predroot):
 
+        # pklファイルの読み込み
         outputs = mmcv.load(predroot)
         outputs = outputs['bbox_results']
         prediction_dict = dict()
+        # 1フレームごとに処理
         for k in range(len(outputs)):
             token = outputs[k]['token']
             self.token_set.add(token)
+            # 自車両の予測結果を結合、スコアやラベルも結合
             if self.show_sdc_traj:
                 outputs[k]['boxes_3d'].tensor = torch.cat(
                     [outputs[k]['boxes_3d'].tensor, outputs[k]['sdc_boxes_3d'].tensor], dim=0)
@@ -87,18 +93,22 @@ class Visualizer:
                 outputs[k]['labels_3d'] = torch.cat([outputs[k]['labels_3d'], torch.zeros(
                     (1,), device=outputs[k]['labels_3d'].device)], dim=0)
             # detection
+            # 検出結果の取得
             bboxes = outputs[k]['boxes_3d']
             scores = outputs[k]['scores_3d']
             labels = outputs[k]['labels_3d']
 
+            # 変換
             track_scores = scores.cpu().detach().numpy()
             track_labels = labels.cpu().detach().numpy()
             track_boxes = bboxes.tensor.cpu().detach().numpy()
 
+            # バウンディングボックスの中心座標、高さと幅、yaw角度の取得
             track_centers = bboxes.gravity_center.cpu().detach().numpy()
             track_dims = bboxes.dims.cpu().detach().numpy()
             track_yaw = bboxes.yaw.cpu().detach().numpy()
 
+            # トラッキングIDの取得
             if 'track_ids' in outputs[k]:
                 track_ids = outputs[k]['track_ids'].cpu().detach().numpy()
             else:
@@ -115,6 +125,7 @@ class Visualizer:
 
             # occflow
             if self.with_occ_map:
+                # 専有マップの情報を取得
                 if 'topk_query_ins_segs' in outputs[k]['occ']:
                     occ_map = outputs[k]['occ']['topk_query_ins_segs'][0].cpu(
                     ).numpy()
@@ -127,6 +138,7 @@ class Visualizer:
             for i in range(track_scores.shape[0]):
                 if track_scores[i] < 0.25:
                     continue
+                # 占有マップが存在し、トラッキングIDがveh_id_listに含まれている場合、現在の占有マップを取得
                 if occ_map is not None and track_labels[i] in self.veh_id_list:
                     occ_map_cur = occ_map[occ_idx, :, ::-1]
                     occ_idx += 1
@@ -141,6 +153,7 @@ class Visualizer:
                     track_id = None
                 # if track_labels[i] not in [0, 1, 2, 3, 4, 6, 7]:
                 #     continue
+                # 予測結果をAgentPredictionDataクラスに格納
                 predicted_agent_list.append(
                     AgentPredictionData(
                         track_scores[i],
@@ -157,6 +170,7 @@ class Visualizer:
                     )
                 )
 
+            # セグメンテーション地図の取得
             if self.with_map:
                 map_thres = 0.7
                 score_list = outputs[k]['pts_bbox']['score_list'].cpu().numpy().transpose([
@@ -169,6 +183,7 @@ class Visualizer:
             else:
                 predicted_map_seg = None
 
+            # プランニングの取得
             if self.with_planning:
                 # detection
                 bboxes = outputs[k]['sdc_boxes_3d']
@@ -188,6 +203,7 @@ class Visualizer:
                     command = outputs[k]['command'][0].cpu().detach().numpy()
                 else:
                     command = None
+                # スコア、ラベル、中心座標、高さと幅、yaw角度、速度、予測軌跡、予測軌跡のスコア、トラッキングID、占有マップを格納
                 planning_agent = AgentPredictionData(
                     track_scores[0],
                     track_labels,
@@ -205,6 +221,7 @@ class Visualizer:
                 )
                 predicted_agent_list.append(planning_agent)
             else:
+                print('No planning results!')
                 planning_agent = None
             prediction_dict[token] = dict(predicted_agent_list=predicted_agent_list,
                                           predicted_map_seg=predicted_map_seg,
@@ -283,17 +300,29 @@ class Visualizer:
 
 def main(args):
     render_cfg = dict(
+         # 専有マップを可視化するか
         with_occ_map=False,
+        # マップを可視化するか
         with_map=False,
+        # 最終的なプランニングを可視化するか
         with_planning=True,
+        # 予測ボックスを可視化するか
         with_pred_box=True,
+        # 他の車両や歩行者の予測軌跡を可視化するか
         with_pred_traj=True,
+        # グラウンドトゥルースボックスを可視化するか
         show_gt_boxes=False,
+        # Lidarのデータを可視化するか
         show_lidar=False,
+        # コマンドを可視化するか
         show_command=True,
+        # 高精度地図を可視化するか
         show_hd_map=False,
+        # 自動車の車両モデルを可視化するか
         show_sdc_car=True,
+        # 可視化結果の凡例を表示するか
         show_legend=True,
+        # 車両の最初の奇跡
         show_sdc_traj=False
     )
 
@@ -302,29 +331,62 @@ def main(args):
     if not os.path.exists(args.out_folder):
         os.makedirs(args.out_folder)
 
+    # validationデータに含まれるシーン名のリスト(scene-1,2)を取得
     val_splits = splits.val
+    print(val_splits)
+    val_scene_tokens = {scene['token'] for scene in viser.nusc.scene if scene['name'] in val_splits}
+
+    # 各シーンに含まれるトークンを確認
+    val_scene_sample_tokens = {sample['token'] for sample in viser.nusc.sample if sample['scene_token'] in val_scene_tokens}
+
+    print(f"Tokens in validation scenes: {len(val_scene_sample_tokens)}")
+
+    # prediction.pkl を読み込む
+    pred_data = mmcv.load('/home/yoshi-22/UniAD/output/results_tr.pkl')
+    prediction_tokens = {entry['token'] for entry in pred_data['bbox_results']}
+    # NuScenesサンプルのトークンセットを取得
+    dataset_tokens = {sample['token'] for sample in viser.nusc.sample}
+    print(f"Number of tokens in NuScenes dataset: {len(dataset_tokens)}")
+
+    print(f"Number of tokens in prediction.pkl: {len(prediction_tokens)}")
+    print(f"Tokens missing in validation scenes: {len(val_scene_sample_tokens - prediction_tokens)}")
+    missing_tokens = dataset_tokens - prediction_tokens
+    print(f"Number of missing tokens: {len(missing_tokens)}")
+    print(f"Sample missing tokens: {list(missing_tokens)[:10]}")  # 欠損トークンの一部を表示
+    for token in missing_tokens:
+        # モデルで推論を行い、予測データを生成
+        result = model.predict(token)
+        save_to_prediction_pkl(result, 'path/to/prediction.pkl')  # 追加保存
+
 
     scene_token_to_name = dict()
+    # 各シーンのトークンをキーとして、シーン名を格納
     for i in range(len(viser.nusc.scene)):
         scene_token_to_name[viser.nusc.scene[i]['token']] = viser.nusc.scene[i]['name']
 
+    # 各サンプルのトークンをキーとして、予測結果が格納されているかを確認
     for i in range(len(viser.nusc.sample)):
         sample_token = viser.nusc.sample[i]['token']
         scene_token = viser.nusc.sample[i]['scene_token']
 
+        # サンプルがvalidationデータに含まれていない場合、スキップ
         if scene_token_to_name[scene_token] not in val_splits:
             continue
 
+        # 予測結果がpklファイルに格納されていない場合、スキップ
         if sample_token not in viser.token_set:
             print(i, sample_token, 'not in prediction pkl!')
             continue
 
+        # BEVとカメラ視点の描画
         viser.visualize_bev(sample_token, os.path.join(args.out_folder, str(i).zfill(3)))
 
         if args.project_to_cam:
             viser.visualize_cam(sample_token, os.path.join(args.out_folder, str(i).zfill(3)))
             viser.combine(os.path.join(args.out_folder, str(i).zfill(3)))
 
+    # 画像を動画に変換
+    # folder_path: 画像が保存されているフォルダのパス, out_path: 動画の保存先のパス, fps: フレームレートは４, downsample: 画像の解像度は1/2
     viser.to_video(args.out_folder, args.demo_video, fps=4, downsample=2)
 
 

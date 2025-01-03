@@ -29,17 +29,15 @@ def create_nuscenes_infos(root_path,
                           info_prefix,
                           version='v1.0-trainval',
                           max_sweeps=10):
-    """Create info file of nuscene dataset.
+    """この関数は、NuScenesデータセットの情報ファイル（例：pkl形式）を作成します。
 
-    Given the raw data, generate its related info file in pkl format.
-
-    Args:
-        root_path (str): Path of the data root.
-        info_prefix (str): Prefix of the info file to be generated.
-        version (str): Version of the data.
-            Default: 'v1.0-trainval'
-        max_sweeps (int): Max number of sweeps.
-            Default: 10
+        引数:
+        root_path: データセットのルートディレクトリパス。
+        out_path: 出力先ディレクトリパス。
+        can_bus_root_path: CANバスデータのルートディレクトリパス。
+        info_prefix: 出力する情報ファイルのプレフィックス。
+        version: データセットのバージョン（例：v1.0-trainval）。
+        max_sweeps: 最大スイープ数（デフォルトは10）
     """
     from nuscenes.nuscenes import NuScenes
     from nuscenes.can_bus.can_bus_api import NuScenesCanBus
@@ -57,7 +55,10 @@ def create_nuscenes_infos(root_path,
         val_scenes = []
     elif version == 'v1.0-mini':
         train_scenes = splits.mini_train
-        val_scenes = splits.mini_val
+        val_scenes = list(set(splits.mini_val + splits.mini_train))
+        print(f"Train scenes: {train_scenes}")
+        print(f"Val scenes: {val_scenes}")
+
     else:
         raise ValueError('unknown')
 
@@ -72,10 +73,11 @@ def create_nuscenes_infos(root_path,
         for s in train_scenes
     ])
     val_scenes = set([
-        available_scenes[available_scene_names.index(s)]['token']
-        for s in val_scenes
+        s['token']
+        for s in available_scenes
     ])
 
+    print(f"Train scenes: {len(train_scenes)}, Val scenes: {len(val_scenes)}")
     test = 'test' in version
     if test:
         print('test scene: {}'.format(len(train_scenes)))
@@ -107,47 +109,89 @@ def create_nuscenes_infos(root_path,
 
 
 def get_available_scenes(nusc):
-    """Get available scenes from the input nuscenes class.
+    """get_available_scenes
+    この関数は、NuScenesデータセット内で利用可能なシーンを取得します。
 
-    Given the raw data, get the information of available scenes for
-    further info generation.
+    引数:
 
-    Args:
-        nusc (class): Dataset class in the nuScenes dataset.
+    nusc: NuScenesクラスのインスタンス。
+    戻り値:
 
-    Returns:
-        available_scenes (list[dict]): List of basic information for the
-            available scenes.
+    利用可能なシーンのリスト。
     """
     available_scenes = []
+    camera_types = [
+        'CAM_FRONT',
+        # 'CAM_FRONT_RIGHT',
+        # 'CAM_FRONT_LEFT',
+        # 'CAM_BACK',
+        # 'CAM_BACK_LEFT',
+        # 'CAM_BACK_RIGHT'
+    ]
     print('total scene num: {}'.format(len(nusc.scene)))
+    # データセット内のすべてのシーンに対してループ
     for scene in nusc.scene:
+        # シーンのトークンを取得
         scene_token = scene['token']
+        # シーンのレコードを取得
         scene_rec = nusc.get('scene', scene_token)
+        # シーンの最初のサンプルを取得
         sample_rec = nusc.get('sample', scene_rec['first_sample_token'])
-        sd_rec = nusc.get('sample_data', sample_rec['data']['LIDAR_TOP'])
+        # サンプルに対応するlidarデータを取得
+        # sd_rec = nusc.get('sample_data', sample_rec['data']['LIDAR_TOP'])
         has_more_frames = True
         scene_not_exist = False
         while has_more_frames:
-            lidar_path, boxes, _ = nusc.get_sample_data(sd_rec['token'])
-            lidar_path = str(lidar_path)
-            if os.getcwd() in lidar_path:
-                # path from lyftdataset is absolute path
-                lidar_path = lidar_path.split(f'{os.getcwd()}/')[-1]
-                # relative path
-            if not mmcv.is_filepath(lidar_path):
-                scene_not_exist = True
+            #　カメラデータの存在確認
+            for cam in camera_types:
+                if cam not in sample_rec['data']:
+                    scene_not_exist = True
+                    break
+                cam_token = sample_rec['data'][cam]
+                print(cam_token)
+                cam_sd_rec = nusc.get('sample_data', cam_token)
+                print(cam_sd_rec)
+                cam_path = str(nusc.get_sample_data_path(cam_sd_rec['token']))
+                print(cam_path)
+                if not mmcv.is_filepath(cam_path):
+                    scene_not_exist = True
+                    print('scene not exist')
+                    break
+            if scene_not_exist:
                 break
-            else:
-                break
-        if scene_not_exist:
-            continue
+
+            # lidarデータのファイルパスが存在しない場合、シーンが存在しないと判断
+            # lidar_path, boxes, _ = nusc.get_sample_data(sd_rec['token'])
+            # lidar_path = str(lidar_path)
+        #     if os.getcwd() in lidar_path:
+        #         # path from lyftdataset is absolute path
+        #         lidar_path = lidar_path.split(f'{os.getcwd()}/')[-1]
+        #         # relative path
+        #     if not mmcv.is_filepath(lidar_path):
+        #         scene_not_exist = True
+        #         break
+        #     else:
+        #         break
+        # if scene_not_exist:
+        #     continue
         available_scenes.append(scene)
     print('exist scene num: {}'.format(len(available_scenes)))
     return available_scenes
 
 
 def _get_can_bus_info(nusc, nusc_can_bus, sample):
+    '''
+    この関数は、CANバス情報を取得し、サンプルの情報に追加します。
+
+    引数:
+
+    nusc: NuScenesインスタンス。
+    nusc_can_bus: NuScenes CANバスAPIインスタンス。
+    sample: サンプルデータ。
+    戻り値:
+
+    CANバス情報を格納したNumPy配列。
+    '''
     scene_name = nusc.get('scene', sample['scene_token'])['name']
     sample_timestamp = sample['timestamp']
     try:
@@ -172,6 +216,18 @@ def _get_can_bus_info(nusc, nusc_can_bus, sample):
     return np.array(can_bus)
 
 def _get_future_traj_info(nusc, sample, predict_steps=16):
+    '''
+    この関数は、指定されたサンプルに基づいて将来の軌道情報を取得します。
+
+    引数:
+
+    nusc: NuScenesインスタンス。
+    sample: サンプルデータ。
+    predict_steps: 予測ステップ数（デフォルトは16）。
+    戻り値:
+
+    軌道情報とその有効性を示すマスク。
+    '''
     sample_token = sample['token']
     ann_tokens = np.array(sample['anns'])
     sd_rec = nusc.get('sample', sample_token)
@@ -213,22 +269,25 @@ def _fill_trainval_infos(nusc,
                          val_scenes,
                          test=False,
                          max_sweeps=10):
-    """Generate the train/val infos from the raw data.
+    '''
+    この関数は、トレーニングおよび検証セットの情報を生成します。
 
-    Args:
-        nusc (:obj:`NuScenes`): Dataset class in the nuScenes dataset.
-        train_scenes (list[str]): Basic information of training scenes.
-        val_scenes (list[str]): Basic information of validation scenes.
-        test (bool): Whether use the test mode. In the test mode, no
-            annotations can be accessed. Default: False.
-        max_sweeps (int): Max number of sweeps. Default: 10.
+    引数:
 
-    Returns:
-        tuple[list[dict]]: Information of training set and validation set
-            that will be saved to the info file.
-    """
+    nusc: NuScenesインスタンス。
+    nusc_can_bus: NuScenes CANバスAPIインスタンス。
+    train_scenes: トレーニングシーンのリスト。
+    val_scenes: 検証シーンのリスト。
+    test: テストモードかどうか（デフォルトはFalse）。
+    max_sweeps: 最大スイープ数（デフォルトは10）。
+    戻り値:
+
+    トレーニングおよび検証セットの情報リスト。
+    '''
     train_nusc_infos = []
     val_nusc_infos = []
+    train_sample_count = 0
+    val_sample_count = 0
     frame_idx = 0
     for sample in mmcv.track_iter_progress(nusc.sample):
         lidar_token = sample['data']['LIDAR_TOP']
@@ -359,9 +418,12 @@ def _fill_trainval_infos(nusc,
 
         if sample['scene_token'] in train_scenes:
             train_nusc_infos.append(info)
-        else:
+            train_sample_count += 1
+        if sample['scene_token'] in val_scenes:
             val_nusc_infos.append(info)
+            val_sample_count += 1
 
+    print(f"Train samples: {train_sample_count}, Val samples: {val_sample_count}")
     return train_nusc_infos, val_nusc_infos
 
 
@@ -372,22 +434,22 @@ def obtain_sensor2top(nusc,
                       e2g_t,
                       e2g_r_mat,
                       sensor_type='lidar'):
-    """Obtain the info with RT matric from general sensor to Top LiDAR.
+    """
+    obtain_sensor2top
+    この関数は、特定のセンサーからトップLiDARへの情報を変換します。
 
-    Args:
-        nusc (class): Dataset class in the nuScenes dataset.
-        sensor_token (str): Sample data token corresponding to the
-            specific sensor type.
-        l2e_t (np.ndarray): Translation from lidar to ego in shape (1, 3).
-        l2e_r_mat (np.ndarray): Rotation matrix from lidar to ego
-            in shape (3, 3).
-        e2g_t (np.ndarray): Translation from ego to global in shape (1, 3).
-        e2g_r_mat (np.ndarray): Rotation matrix from ego to global
-            in shape (3, 3).
-        sensor_type (str): Sensor to calibrate. Default: 'lidar'.
+    引数:
 
-    Returns:
-        sweep (dict): Sweep information after transformation.
+    nusc: NuScenesインスタンス。
+    sensor_token: センサーデータのトークン。
+    l2e_t: LiDARからEGOへの平行移動。
+    l2e_r_mat: LiDARからEGOへの回転行列。
+    e2g_t: EGOからグローバルへの平行移動。
+    e2g_r_mat: EGOからグローバルへの回転行列。
+    sensor_type: センサーの種類（デフォルトはlidar）。
+    戻り値:
+
+    トップLiDAR情報を含む辞書。
     """
     sd_rec = nusc.get('sample_data', sensor_token)
     cs_record = nusc.get('calibrated_sensor',
@@ -428,13 +490,14 @@ def obtain_sensor2top(nusc,
 
 
 def export_2d_annotation(root_path, info_path, version, mono3d=True):
-    """Export 2d annotation from the info file and raw data.
+    """
+    この関数は、NuScenes情報ファイルを基に2Dアノテーションをエクスポートします。
 
-    Args:
-        root_path (str): Root path of the raw data.
-        info_path (str): Path of the info file.
-        version (str): Dataset version.
-        mono3d (bool): Whether to export mono3d annotation. Default: True.
+    引数:
+    root_path: データのルートパス。
+    info_path: 情報ファイルのパス。
+    version: データセットのバージョン。
+    mono3d: Mono3Dアノテーションをエクスポートするかどうか（デフォルトはTrue）。
     """
     # get bbox annotations for camera
     camera_types = [
@@ -495,17 +558,18 @@ def get_2d_boxes(nusc,
                  sample_data_token: str,
                  visibilities: List[str],
                  mono3d=True):
-    """Get the 2D annotation records for a given `sample_data_token`.
+    """
+    この関数は、指定されたカメラフレームの2Dボックスアノテーションを取得します。
 
-    Args:
-        sample_data_token (str): Sample data token belonging to a camera \
-            keyframe.
-        visibilities (list[str]): Visibility filter.
-        mono3d (bool): Whether to get boxes with mono3d annotation.
+    引数:
 
-    Return:
-        list[dict]: List of 2D annotation record that belongs to the input
-            `sample_data_token`.
+    nusc: NuScenesインスタンス。
+    sample_data_token: サンプルデータトークン。
+    visibilities: 可視性フィルタ。
+    mono3d: Mono3Dアノテーションを取得するかどうか。
+    戻り値:
+
+    2Dアノテーションのリスト。
     """
 
     # Get the sample data and the sample corresponding to that sample data.
