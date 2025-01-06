@@ -79,6 +79,13 @@ class Visualizer:
         # pklファイルの読み込み
         outputs = mmcv.load(predroot)
         outputs = outputs['bbox_results']
+        # print(f'Number of samples in prediction pkl: {len(outputs)}')
+        # print(f'Number of samples in NuScenes dataset: {outputs[0].keys()}')
+        # output2 = outputs[0]['token']
+        # print(f'Number of samples in NuScenes dataset: {type(output2)}')
+        # print(f'Number of samples in NuScenes dataset: {output2}')
+        # output3 = outputs[0]['track_bbox_results']
+        # print(f'Number of samples in NuScenes dataset: {type(output3)}')
         prediction_dict = dict()
         # 1フレームごとに処理
         for k in range(len(outputs)):
@@ -353,16 +360,20 @@ def main(args):
     missing_tokens = dataset_tokens - prediction_tokens
     print(f"Number of missing tokens: {len(missing_tokens)}")
     print(f"Sample missing tokens: {list(missing_tokens)[:10]}")  # 欠損トークンの一部を表示
-    for token in missing_tokens:
-        # モデルで推論を行い、予測データを生成
-        result = model.predict(token)
-        save_to_prediction_pkl(result, 'path/to/prediction.pkl')  # 追加保存
-
 
     scene_token_to_name = dict()
     # 各シーンのトークンをキーとして、シーン名を格納
     for i in range(len(viser.nusc.scene)):
         scene_token_to_name[viser.nusc.scene[i]['token']] = viser.nusc.scene[i]['name']
+        # print(f'viser {dir(viser.nusc)}')
+        # print(f'viser {viser.nusc.scene[i].keys()}')
+        # print(f'viser {viser.nusc.sample_data[i]}')
+        # print(f'viser {viser.nusc.sample_data[i].keys()}')
+        # print(f'viser {type(viser.nusc.sample[i])}')
+        # print(f'viser {viser.nusc.sample[i].keys()}')
+        print(viser.nusc.scene[i]['name'])
+        print(viser.nusc.scene[i]['token'])
+
 
     # 各サンプルのトークンをキーとして、予測結果が格納されているかを確認
     for i in range(len(viser.nusc.sample)):
@@ -370,7 +381,7 @@ def main(args):
         scene_token = viser.nusc.sample[i]['scene_token']
 
         # サンプルがvalidationデータに含まれていない場合、スキップ
-        if scene_token_to_name[scene_token] not in val_splits:
+        if not viser.nusc.version.endswith('mini') and scene_token_to_name[scene_token] not in val_splits:
             continue
 
         # 予測結果がpklファイルに格納されていない場合、スキップ

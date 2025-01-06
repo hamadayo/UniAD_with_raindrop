@@ -50,6 +50,9 @@ class CameraRender(BaseRender):
         for agent in agent_prediction_list:
             box = Box(agent.pred_center, agent.pred_dim, Quaternion(axis=(0.0, 0.0, 1.0), radians=agent.pred_yaw),
                       name=agent.pred_label, token='predicted')
+            
+            # print(f'Box: {box}')
+            # print(type(box))
             box.is_sdc = agent.is_sdc
             if project_traj:
                 box.pred_traj = np.zeros((agent.pred_traj_max.shape[0]+1, 3))
@@ -64,6 +67,7 @@ class CameraRender(BaseRender):
                     lidar_cs_record['translation'])[None, :]
             box.rotate(Quaternion(lidar_cs_record['rotation']))
             box.translate(np.array(lidar_cs_record['translation']))
+            # print(f'Box: {box.__dict__}')
             boxes.append(box)
         # Make list of Box objects including coord system transforms.
 
@@ -122,6 +126,7 @@ class CameraRender(BaseRender):
             'sample_data', sample['data']['LIDAR_TOP'])['calibrated_sensor_token'])
         for i, cam in enumerate(self.cams):
             sample_data_token = sample['data'][cam]
+            # print(f'pred_agent_list: {predicted_agent_list[0].__dict__}')
             box_list, tr_id_list, camera_intrinsic, imsize = self.project_to_cam(
                 predicted_agent_list, sample_data_token, nusc, lidar_cs_record)
             for j, box in enumerate(box_list):
@@ -186,8 +191,11 @@ class CameraRender(BaseRender):
     def get_image_info(self, sample_data_token, nusc):
         """Retrieve image information."""
         sd_record = nusc.get('sample_data', sample_data_token)
+        # print(f'Sample Data Record: {sd_record}')
         cs_record = nusc.get('calibrated_sensor',
                              sd_record['calibrated_sensor_token'])
+        # print(f'Calibrated Sensor Record: {cs_record}')
+        
         sensor_record = nusc.get('sensor', cs_record['sensor_token'])
         pose_record = nusc.get('ego_pose', sd_record['ego_pose_token'])
 

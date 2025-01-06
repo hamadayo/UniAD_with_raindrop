@@ -18,13 +18,12 @@ import numpy as np
 import pycocotools.mask as mask_util
 
 def custom_encode_mask_results(mask_results):
-    """Encode bitmap mask to RLE code. Semantic Masks only
-    Args:
-        mask_results (list | tuple[list]): bitmap mask results.
-            In mask scoring rcnn, mask_results is a tuple of (segm_results,
-            segm_cls_score).
-    Returns:
-        list | tuple: RLE encoded mask.
+    """ビットマップマスクをRLE（ランレングスエンコード）コードにエンコードする関数。セマンティックマスクのみ対象。
+    引数:
+        mask_results (list | tuple[list]): ビットマップ形式のマスク結果。
+            Mask Scoring R-CNN の場合、mask_results は (segm_results, segm_cls_score) のタプル。
+    戻り値:
+    list | tuple: RLE 形式にエンコードされたマスク。
     """
     cls_segms = mask_results
     num_classes = len(cls_segms)
@@ -38,27 +37,26 @@ def custom_encode_mask_results(mask_results):
     return [encoded_mask_results]
 
 def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
-    """Test model with multiple gpus.
-    This method tests model with multiple gpus and collects the results
-    under two different modes: gpu and cpu modes. By setting 'gpu_collect=True'
-    it encodes results to gpu tensors and use gpu communication for results
-    collection. On cpu mode it saves the results on different gpus to 'tmpdir'
-    and collects them by the rank 0 worker.
-    Args:
-        model (nn.Module): Model to be tested.
-        data_loader (nn.Dataloader): Pytorch data loader.
-        tmpdir (str): Path of directory to save the temporary results from
-            different gpus under cpu mode.
-        gpu_collect (bool): Option to use either gpu or cpu to collect results.
-    Returns:
-        list: The prediction results.
+    """複数GPUでモデルをテストする関数。
+    このメソッドは複数のGPUを用いてモデルをテストし、結果を2つの異なるモード（GPUモードとCPUモード）で収集する。
+    'gpu_collect=True' を設定すると、結果をGPUテンソルにエンコードし、GPU間通信を使用して結果を収集する。
+    CPUモードでは、結果を各GPU上の 'tmpdir' に保存し、ランク0のワーカーが結果を収集する。
+    引数:
+        model (nn.Module): テスト対象のモデル。
+        data_loader (nn.Dataloader): Pytorchのデータローダー。
+        tmpdir (str): CPUモードで各GPUの一時的な結果を保存するディレクトリのパス。
+        gpu_collect (bool): 結果を収集する際にGPUを使用するかCPUを使用するかのオプション。
+    戻り値:
+        list: 推論結果。
     """
+    # モデルを評価モードに設定
     model.eval()
 
     # Occ eval init
     eval_occ = hasattr(model.module, 'with_occ_head') \
                 and model.module.with_occ_head
     if eval_occ:
+        print('Evaluating Occ')
         # 30mx30m, 100mx100m at 50cm resolution
         EVALUATION_RANGES = {'30x30': (70, 130),
                             '100x100': (0, 200)}
@@ -74,12 +72,16 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
     eval_planning =  hasattr(model.module, 'with_planning_head') \
                       and model.module.with_planning_head
     if eval_planning:
+        print('Evaluating Planning')
         planning_metrics = PlanningMetric().cuda()
+
         
     bbox_results = []
     mask_results = []
     dataset = data_loader.dataset
     rank, world_size = get_dist_info()
+    print(f'rank: {rank}, world_size: {world_size}')
+    print(f'len(dataset): {len(dataset)}')
     if rank == 0:
         prog_bar = mmcv.ProgressBar(len(dataset))
     time.sleep(2)  # This line can prevent deadlock problem in some cases.
@@ -88,17 +90,26 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
     for i, data in enumerate(data_loader):
         with torch.no_grad():
             result = model(return_loss=False, rescale=True, **data)
+            # print(f'111111111111111data: {len(data["img"][0].data)}')
+            # print(f'111111111111111data: {data["img"][0].data[0].shape}')
+            # print(f'results: {len(result)}')
+            # print(f'results: {result[0].keys()}')
 
             # EVAL planning
             if eval_planning:
                 # TODO: Wrap below into a func
                 segmentation = result[0]['planning']['planning_gt']['segmentation']
+                # 真値の軌道データ(x,y,θ)
                 sdc_planning = result[0]['planning']['planning_gt']['sdc_planning']
+                # 軌道データが有効かを示すマスク    
                 sdc_planning_mask = result[0]['planning']['planning_gt']['sdc_planning_mask']
+                # 予測された軌道データ(x,y)
                 pred_sdc_traj = result[0]['planning']['result_planning']['sdc_traj']
                 result[0]['planning_traj'] = result[0]['planning']['result_planning']['sdc_traj']
                 result[0]['planning_traj_gt'] = result[0]['planning']['planning_gt']['sdc_planning']
+                # モデルが予測したコマンド（例えば１）
                 result[0]['command'] = result[0]['planning']['planning_gt']['command']
+                # obj_colは他のオブジェクトとの衝突を表す、obj_box_colはオブジェクトの境界ボックスとの衝突を表す、l2は予測された軌道と真の軌道のL2距離を表す
                 planning_metrics(pred_sdc_traj[:, :6, :2], sdc_planning[0][0,:, :6, :2], sdc_planning_mask[0][0,:, :6, :2], segmentation[0][:, [1,2,3,4,5,6]])
 
             # Eval Occ
@@ -108,6 +119,8 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
                 if occ_to_eval and 'occ' in result[0].keys():
                     num_occ += 1
                     for key, grid in EVALUATION_RANGES.items():
+                        # 評価範囲を制限する（70, 130）なので、前後30m
+                        # モデルが異なる空間範囲（30m×30m、100m×100m）でどの程度精度よく予測しているかを検証。
                         limits = slice(grid[0], grid[1])
                         iou_metrics[key](result[0]['occ']['seg_out'][..., limits, limits].contiguous(),
                                         result[0]['occ']['seg_gt'][..., limits, limits].contiguous())
@@ -141,10 +154,13 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
                 bbox_results.extend(result)
 
         if rank == 0:
+            # プログレスバーを更新
             for _ in range(batch_size * world_size):
                 prog_bar.update()
 
+
     # collect results from all ranks
+    # 最終結果を収集
     if gpu_collect:
         bbox_results = collect_results_gpu(bbox_results, len(dataset))
         if have_mask:

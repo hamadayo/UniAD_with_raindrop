@@ -140,12 +140,12 @@ class NuScenesE2EDataset(NuScenesDataset):
             return self.len_debug
 
     def load_annotations(self, ann_file):
-        """Load annotations from ann_file.
-        Args:
-            ann_file (str): Path of the annotation file.
+        """ann_fileからアノテーションを読み込む。
+        引数:
+            ann_file (str): アノテーションファイルのパス。
 
-        Returns:
-            list[dict]: List of annotations sorted by timestamps.
+        戻り値:
+            list[dict]: タイムスタンプ順にソートされたアノテーションのリスト。
         """
         if self.file_client_args['backend'] == 'disk':
             # data_infos = mmcv.load(ann_file)
@@ -168,16 +168,16 @@ class NuScenesE2EDataset(NuScenesDataset):
 
     def prepare_train_data(self, index):
         """
-        Training data preparation.
-        Args:
-            index (int): Index for accessing the target data.
-        Returns:
-            dict: Training data dict of the corresponding index.
+        トレーニングデータの準備。
+        引数:
+            index (int): 対象データを取得するためのインデックス。
+        戻り値:
+            dict: 対応するインデックスのトレーニングデータ辞書。
                 img: queue_length, 6, 3, H, W
-                img_metas: img_metas of each frame (list)
-                gt_globals_3d: gt_globals of each frame (list)
-                gt_bboxes_3d: gt_bboxes of each frame (list)
-                gt_inds: gt_inds of each frame (list)
+                img_metas: 各フレームのimg_metas（リスト）
+                gt_globals_3d: 各フレームのgt_globals（リスト）
+                gt_bboxes_3d: 各フレームのgt_bboxes（リスト）
+                gt_inds: 各フレームのgt_inds（リスト）
         """
         data_queue = []
         self.enbale_temporal_aug = False
@@ -237,16 +237,16 @@ class NuScenesE2EDataset(NuScenesDataset):
 
     def prepare_test_data(self, index):
         """
-        Training data preparation.
-        Args:
-            index (int): Index for accessing the target data.
-        Returns:
-            dict: Training data dict of the corresponding index.
+        テストデータの準備。
+        引数:
+            index (int): 対象データを取得するためのインデックス。
+        戻り値:
+            dict: 対応するインデックスのテストデータ辞書。
                 img: queue_length, 6, 3, H, W
-                img_metas: img_metas of each frame (list)
-                gt_labels_3d: gt_labels of each frame (list)
-                gt_bboxes_3d: gt_bboxes of each frame (list)
-                gt_inds: gt_inds of each frame(list)
+                img_metas: 各フレームのimg_metas（リスト）
+                gt_labels_3d: 各フレームのgt_labels（リスト）
+                gt_bboxes_3d: 各フレームのgt_bboxes（リスト）
+                gt_inds: 各フレームのgt_inds（リスト）
         """
 
         input_dict = self.get_data_info(index)
@@ -326,21 +326,21 @@ class NuScenesE2EDataset(NuScenesDataset):
         return queue
 
     def get_ann_info(self, index):
-        """Get annotation info according to the given index.
+        """指定されたインデックスに基づいてアノテーション情報を取得する。
 
-        Args:
-            index (int): Index of the annotation data to get.
+        引数:
+            index (int): 取得対象のアノテーションデータのインデックス。
 
-        Returns:
-            dict: Annotation information consists of the following keys:
+        戻り値:
+            dict: 次のキーを含むアノテーション情報:
 
                 - gt_bboxes_3d (:obj:`LiDARInstance3DBoxes`): \
-                    3D ground truth bboxes
-                - gt_labels_3d (np.ndarray): Labels of ground truths.
-                - gt_names (list[str]): Class names of ground truths.
-                - gt_inds (np.ndarray): Instance ids of ground truths.
-                - gt_fut_traj (np.ndarray): .
-                - gt_fut_traj_mask (np.ndarray): .
+                    3DのGround Truthバウンディングボックス
+                - gt_labels_3d (np.ndarray): Ground Truthのラベル。
+                - gt_names (list[str]): Ground Truthのクラス名。
+                - gt_inds (np.ndarray): Ground TruthのインスタンスID。
+                - gt_fut_traj (np.ndarray): 未来の軌道情報。
+                - gt_fut_traj_mask (np.ndarray): 軌道マスク情報。
         """
         info = self.data_infos[index]
         # filter out bbox containing no points
@@ -410,22 +410,20 @@ class NuScenesE2EDataset(NuScenesDataset):
         return anns_results
 
     def get_data_info(self, index):
-        """Get data info according to the given index.
+        """指定されたインデックスに基づいてデータ情報を取得する。
 
-        Args:
-            index (int): Index of the sample data to get.
-        Returns:
-            dict: Data information that will be passed to the data \
-                preprocessing pipelines. It includes the following keys:
+        引数:
+            index (int): 取得対象のサンプルデータのインデックス。
+        戻り値:
+            dict: データ情報。データの前処理パイプラインに渡される。以下のキーを含む:
 
-                - sample_idx (str): Sample index.
-                - pts_filename (str): Filename of point clouds.
-                - sweeps (list[dict]): Infos of sweeps.
-                - timestamp (float): Sample timestamp.
-                - img_filename (str, optional): Image filename.
-                - lidar2img (list[np.ndarray], optional): Transformations \
-                    from lidar to different cameras.
-                - ann_info (dict): Annotation info.
+                - sample_idx (str): サンプルインデックス。
+                - pts_filename (str): 点群データのファイル名。
+                - sweeps (list[dict]): スイープ情報。
+                - timestamp (float): サンプルのタイムスタンプ。
+                - img_filename (str, optional): 画像ファイル名。
+                - lidar2img (list[np.ndarray], optional): ライダーから各カメラへの変換。
+                - ann_info (dict): アノテーション情報。
         """
         info = self.data_infos[index]
 
@@ -733,24 +731,39 @@ class NuScenesE2EDataset(NuScenesDataset):
             return data
 
     def _format_bbox(self, results, jsonfile_prefix=None):
-        """Convert the results to the standard format.
-        Args:
-            results (list[dict]): Testing results of the dataset.
-            jsonfile_prefix (str): The prefix of the output jsonfile.
-                You can specify the output directory/filename by
-                modifying the jsonfile_prefix. Default: None.
-        Returns:
-            str: Path of the output json file.
+        """結果を標準形式に変換。
+        引数:
+            results (list[dict]): データセットのテスト結果。
+            jsonfile_prefix (str): 出力jsonファイルの接頭辞。
+                出力ディレクトリ/ファイル名を変更可能。デフォルト: None。
+        戻り値:
+            str: 出力jsonファイルのパス。
         """
+        print("Results structure:", type(results), len(results))
+        print("First result sample:", results[0])
         nusc_annos = {}
         nusc_map_annos = {}
         mapped_class_names = self.CLASSES
 
         print('Start to convert detection format...')
         for sample_id, det in enumerate(mmcv.track_iter_progress(results)):
+            print(f"Processing Sample ID {sample_id}:")
+            print("Detection keys:", det.keys())
+            print("Detection example:", det)
+            break  # 最初のフレームだけ確認してループを停止
+
+        # 各フレームごとに処理
+        for sample_id, det in enumerate(mmcv.track_iter_progress(results)):
             annos = []
             sample_token = self.data_infos[sample_id]['token']
 
+            if 'boxes_3d' in det:
+                print(f"Boxes 3D structure for Sample {sample_id}:")
+                print("Boxes 3D content:", det['boxes_3d'])
+            else:
+                print(f"No 3D boxes for Sample {sample_id}")
+
+            # iouを収集してnusc_map_annosに追加
             if 'map' in self.eval_mod:
                 map_annos = {}
                 for key, value in det['ret_iou'].items():
@@ -761,12 +774,15 @@ class NuScenesE2EDataset(NuScenesDataset):
                 nusc_annos[sample_token] = annos
                 continue
 
+            # 検出された3DバウンディングボックスをNuScenes形式に変換
             boxes = output_to_nusc_box(det)
             boxes_ego = copy.deepcopy(boxes)
             boxes, keep_idx = lidar_nusc_box_to_global(self.data_infos[sample_id], boxes,
                                                        mapped_class_names,
                                                        self.eval_detection_configs,
                                                        self.eval_version)
+            
+            # 速度に応じて停止か移動かの属性を設定
             for i, box in enumerate(boxes):
                 name = mapped_class_names[box.label]
                 if np.sqrt(box.velocity[0]**2 + box.velocity[1]**2) > 0.2:
@@ -799,6 +815,7 @@ class NuScenesE2EDataset(NuScenesDataset):
 
                 box_ego = boxes_ego[keep_idx[i]]
                 trans = box_ego.center
+                # 予測された軌道をローカル座標からグローバル座標に変換
                 if 'traj' in det:
                     traj_local = det['traj'][keep_idx[i]].numpy()[..., :2]
                     traj_scores = det['traj_scores'][keep_idx[i]].numpy()
@@ -811,6 +828,7 @@ class NuScenesE2EDataset(NuScenesDataset):
                     traj_ego[kk] = convert_local_coords_to_global(
                         traj_local[kk], trans, rot)
 
+                # nuScenesのアノテーション形式に変換
                 nusc_anno = dict(
                     sample_token=sample_token,
                     translation=box.center.tolist(),
@@ -841,20 +859,21 @@ class NuScenesE2EDataset(NuScenesDataset):
         return res_path
 
     def format_results(self, results, jsonfile_prefix=None):
-        """Format the results to json (standard format for COCO evaluation).
-
-        Args:
-            results (list[dict]): Testing results of the dataset.
-            jsonfile_prefix (str | None): The prefix of json files. It includes
-                the file path and the prefix of filename, e.g., "a/b/prefix".
-                If not specified, a temp file will be created. Default: None.
-
-        Returns:
-            tuple: Returns (result_files, tmp_dir), where `result_files` is a \
-                dict containing the json filepaths, `tmp_dir` is the temporal \
-                directory created for saving json files when \
-                `jsonfile_prefix` is not specified.
         """
+        結果をJSON形式にフォーマットします（COCO評価の標準形式）。
+
+        引数:
+            results (list[dict]): データセットのテスト結果。
+            jsonfile_prefix (str | None): JSONファイルの接頭辞。ファイルパスと
+                ファイル名の接頭辞を含む（例: "a/b/prefix"）。指定されていない場合は、
+                一時ファイルが作成される。デフォルト: None。
+
+        戻り値:
+            tuple: (result_files, tmp_dir)を返します。`result_files`はJSONファイルのパスを
+                含む辞書で、`tmp_dir`は`jsonfile_prefix`が指定されていない場合に
+                JSONファイルを保存するために作成された一時ディレクトリです。
+        """
+
         assert isinstance(results, list), 'results must be a list'
         assert len(results) == len(self), (
             'The length of results is not equal to the dataset len: {} != {}'.
@@ -983,24 +1002,27 @@ class NuScenesE2EDataset(NuScenesDataset):
                  out_dir=None,
                  pipeline=None,
                  planning_evaluation_strategy="uniad"):
-        """Evaluation in nuScenes protocol.
-        Args:
-            results (list[dict]): Testing results of the dataset.
-            metric (str | list[str]): Metrics to be evaluated.
-            logger (logging.Logger | str | None): Logger used for printing
-                related information during evaluation. Default: None.
-            jsonfile_prefix (str | None): The prefix of json files. It includes
-                the file path and the prefix of filename, e.g., "a/b/prefix".
-                If not specified, a temp file will be created. Default: None.
-            show (bool): Whether to visualize.
-                Default: False.
-            out_dir (str): Path to save the visualization results.
-                Default: None.
-            pipeline (list[dict], optional): raw data loading for showing.
-                Default: None.
-        Returns:
-            dict[str, float]: Results of each evaluation metric.
+
         """
+        nuScenesプロトコルでの評価。
+        引数:
+            results (list[dict]): データセットのテスト結果。
+            metric (str | list[str]): 評価するメトリクス。
+            logger (logging.Logger | str | None): 評価中に関連情報を出力するために使用するロガー。
+                デフォルト: None。
+            jsonfile_prefix (str | None): JSONファイルの接頭辞。ファイルパスとファイル名の
+                接頭辞を含む（例: "a/b/prefix"）。指定されていない場合は、一時ファイルが
+                作成される。デフォルト: None。
+            show (bool): 可視化するかどうか。
+                デフォルト: False。
+            out_dir (str): 可視化結果を保存するパス。
+                デフォルト: None。
+            pipeline (list[dict], optional): 可視化のために使用する生データの読み込み設定。
+                デフォルト: None。
+        戻り値:
+            dict[str, float]: 各評価指標の結果を含む辞書。
+        """
+
         if isinstance(results, dict):
             if 'occ_results_computed' in results.keys():
                 occ_results_computed = results['occ_results_computed']
@@ -1048,8 +1070,11 @@ class NuScenesE2EDataset(NuScenesDataset):
         result_files, tmp_dir = self.format_results(results, jsonfile_prefix)
         result_files_det, tmp_dir = self.format_results_det(
             results, jsonfile_prefix)
+        
+        print("Results filesaaaaa:", result_files, result_files_det)
 
         if isinstance(result_files, dict):
+            print('Evaluating bboxes of multiple results')
             results_dict = dict()
             for name in result_names:
                 print('Evaluating bboxes of {}'.format(name))
@@ -1057,6 +1082,7 @@ class NuScenesE2EDataset(NuScenesDataset):
                     result_files[name], result_files_det[name])
             results_dict.update(ret_dict)
         elif isinstance(result_files, str):
+            print('444444444444')
             results_dict = self._evaluate_single(
                 result_files, result_files_det)
 
@@ -1103,18 +1129,18 @@ class NuScenesE2EDataset(NuScenesDataset):
                          logger=None,
                          metric='bbox',
                          result_name='pts_bbox'):
-        """Evaluation for a single model in nuScenes protocol.
+        """nuScenesプロトコルでの単一モデル評価。
 
-        Args:
-            result_path (str): Path of the result file.
-            logger (logging.Logger | str | None): Logger used for printing
-                related information during evaluation. Default: None.
-            metric (str): Metric name used for evaluation. Default: 'bbox'.
-            result_name (str): Result name in the metric prefix.
-                Default: 'pts_bbox'.
+        引数:
+            result_path (str): 結果ファイルのパス。
+            logger (logging.Logger | str | None): 評価中に関連情報を出力するロガー。
+                デフォルト: None。
+            metric (str): 評価に使用するメトリック名。デフォルト: 'bbox'。
+            result_name (str): メトリックプレフィックス内の結果名。
+                デフォルト: 'pts_bbox'。
 
-        Returns:
-            dict: Dictionary of evaluation details.
+        戻り値:
+            dict: 評価の詳細を含む辞書。
         """
 
         # TODO: fix the evaluation pipelines
@@ -1128,7 +1154,7 @@ class NuScenesE2EDataset(NuScenesDataset):
         mmcv.mkdir_or_exist(output_dir_motion)
 
         eval_set_map = {
-            'v1.0-mini': 'mini_val',
+            'v1.0-mini': 'mini_train',
             'v1.0-trainval': 'val',
         }
         detail = dict()

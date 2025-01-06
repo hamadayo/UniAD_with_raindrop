@@ -25,27 +25,23 @@ warnings.filterwarnings("ignore")
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='MMDet test (and eval) a model')
+        description='MMDet を用いてモデルのテスト（および評価）を実行するためのスクリプト')
     parser.add_argument('config', help='test config file path')
     parser.add_argument('checkpoint', help='checkpoint file')
     parser.add_argument('--out', default='output/results.pkl', help='output result file in pickle format')
     parser.add_argument(
         '--fuse-conv-bn',
         action='store_true',
-        help='Whether to fuse conv and bn, this will slightly increase'
-        'the inference speed')
+        help='畳み込み層（Conv）とバッチ正規化層（BN）を統合するかどうか。これにより推論速度がわずかに向上')
     parser.add_argument(
         '--format-only',
         action='store_true',
-        help='Format the output results without perform evaluation. It is'
-        'useful when you want to format the result to a specific format and '
-        'submit it to the test server')
+        help='評価を実行せず、結果を指定フォーマットに変換するためのオプション。 例: テストサーバーへの提出用にフォーマットを変換する際に使用')
     parser.add_argument(
         '--eval',
         type=str,
         nargs='+',
-        help='evaluation metrics, which depends on the dataset, e.g., "bbox",'
-        ' "segm", "proposal" for COCO, and "mAP", "recall" for PASCAL VOC')
+        help='COCOデータセット用: "bbox", "segm", "proposal"　ASCAL VOCデータセット用: "mAP", "recall"')
     parser.add_argument('--show', action='store_true', help='show results')
     parser.add_argument(
         '--show-dir', help='directory where results will be saved')
@@ -113,6 +109,8 @@ def main():
         ('Please specify at least one operation (save/eval/format/show the '
          'results / save the results) with the argument "--out", "--eval"'
          ', "--format-only", "--show" or "--show-dir"')
+    
+    # 今回は　eval bbox
 
     if args.eval and args.format_only:
         raise ValueError('--eval and --format_only cannot be both specified')
@@ -121,6 +119,8 @@ def main():
         raise ValueError('The output file must be a pkl file.')
 
     cfg = Config.fromfile(args.config)
+    # configは./projects/configs/stage2_e2e/base_e2e.py
+    # cofigに書かれた内容で上書き
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
     # import modules from string list.
@@ -141,6 +141,7 @@ def main():
                 for m in _module_dir[1:]:
                     _module_path = _module_path + '.' + m
                 print(_module_path)
+                print('0')
                 plg_lib = importlib.import_module(_module_path)
             else:
                 # import dir is the dirpath for the config file
@@ -153,13 +154,16 @@ def main():
                 plg_lib = importlib.import_module(_module_path)
 
     # set cudnn_benchmark
+    # cudaの最適化を行うかどうか
     if cfg.get('cudnn_benchmark', False):
         torch.backends.cudnn.benchmark = True
 
     cfg.model.pretrained = None
     # in case the test dataset is concatenated
     samples_per_gpu = 1
+    # データセットが複数か単数かで処理を分ける
     if isinstance(cfg.data.test, dict):
+        print('1')
         cfg.data.test.test_mode = True
         samples_per_gpu = cfg.data.test.pop('samples_per_gpu', 1)
         if samples_per_gpu > 1:
@@ -176,10 +180,12 @@ def main():
                 ds_cfg.pipeline = replace_ImageToTensor(ds_cfg.pipeline)
 
     # init distributed env first, since logger depends on the dist info.
+    # gpuの分散処理を行うかどうか
     if args.launcher == 'none':
         distributed = False
     else:
         distributed = True
+        print('2')
         init_dist(args.launcher, **cfg.dist_params)
 
     # set random seeds
@@ -197,8 +203,30 @@ def main():
         nonshuffler_sampler=cfg.data.nonshuffler_sampler,
     )
 
+    '''
+    dataloaderの出力
+    Loading NuScenes tables for version v1.0-mini...
+    23 category,
+    8 attribute,
+    4 visibility,
+    911 instance,
+    12 sensor,
+    120 calibrated_sensor,
+    31206 ego_pose,
+    8 log,
+    10 scene,
+    404 sample,
+    31206 sample_data,
+    18538 sample_annotation,
+    4 map,
+    Done loading in 0.343 seconds.
+    '''
+
+    print('3')
+
     # build the model and load checkpoint
     cfg.model.train_cfg = None
+    # モデルの構築
     model = build_model(cfg.model, test_cfg=cfg.get('test_cfg'))
     fp16_cfg = cfg.get('fp16', None)
     if fp16_cfg is not None:
@@ -208,6 +236,7 @@ def main():
         model = fuse_conv_bn(model)
     # old versions did not save class info in checkpoints, this walkaround is
     # for backward compatibility
+    # チェックポイントにクラス情報が含まれていない場合、データセットのクラス情報を使用する
     if 'CLASSES' in checkpoint.get('meta', {}):
         model.CLASSES = checkpoint['meta']['CLASSES']
     else:
@@ -219,11 +248,15 @@ def main():
         # segmentation dataset has `PALETTE` attribute
         model.PALETTE = dataset.PALETTE
 
+    print('4')
+
+    # モデルをGPUに転送
     if not distributed:
         assert False
         # model = MMDataParallel(model, device_ids=[0])
         # outputs = single_gpu_test(model, data_loader, args.show, args.show_dir)
     else:
+        print('5')
         model = MMDistributedDataParallel(
             model.cuda(),
             device_ids=[torch.cuda.current_device()],
@@ -231,6 +264,7 @@ def main():
         outputs = custom_multi_gpu_test(model, data_loader, args.tmpdir,
                                         args.gpu_collect)
 
+    print('fififififififfinish')
     rank, _ = get_dist_info()
     if rank == 0:
         if args.out:
@@ -245,6 +279,7 @@ def main():
             dataset.format_results(outputs, **kwargs)
 
         if args.eval:
+            print('5555555')
             eval_kwargs = cfg.get('evaluation', {}).copy()
             # hard-code way to remove EvalHook args
             for key in [
@@ -252,10 +287,13 @@ def main():
                     'rule'
             ]:
                 eval_kwargs.pop(key, None)
+            print('7777777')
             eval_kwargs.update(dict(metric=args.eval, **kwargs))
+            print('8888888')
 
             print(dataset.evaluate(outputs, **eval_kwargs))
 
-
+# mmdetection3dのテストスクリプト
+# 指定したデータ・セットで推論を行い、結果を保存、評価、表示する
 if __name__ == '__main__':
     main()
