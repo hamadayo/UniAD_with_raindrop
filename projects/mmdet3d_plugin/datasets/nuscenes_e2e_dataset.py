@@ -33,6 +33,8 @@ from projects.mmdet3d_plugin.datasets.data_utils.trajectory_api import NuScenesT
 from .data_utils.data_utils import lidar_nusc_box_to_global, obtain_map_info, output_to_nusc_box, output_to_nusc_box_det
 from nuscenes.prediction import convert_local_coords_to_global
 
+import pandas as pd
+
 
 @DATASETS.register_module()
 class NuScenesE2EDataset(NuScenesDataset):
@@ -740,7 +742,7 @@ class NuScenesE2EDataset(NuScenesDataset):
             str: 出力jsonファイルのパス。
         """
         print("Results structure:", type(results), len(results))
-        print("First result sample:", results[0])
+        # print("First result sample:", results[0])
         nusc_annos = {}
         nusc_map_annos = {}
         mapped_class_names = self.CLASSES
@@ -749,13 +751,17 @@ class NuScenesE2EDataset(NuScenesDataset):
         for sample_id, det in enumerate(mmcv.track_iter_progress(results)):
             print(f"Processing Sample ID {sample_id}:")
             print("Detection keys:", det.keys())
-            print("Detection example:", det)
+            # print("Detection example:", det)
             break  # 最初のフレームだけ確認してループを停止
 
         # 各フレームごとに処理
         for sample_id, det in enumerate(mmcv.track_iter_progress(results)):
             annos = []
-            sample_token = self.data_infos[sample_id]['token']
+            for i in range(len(results)):
+                for j in range(len(self.data_infos)):
+                    if self.data_infos[j]['token'] == results[i]['token']:
+                        sample_token = self.data_infos[j]['token']
+                        print(f'sample_id and i, j2{sample_id, i, j}')
 
             if 'boxes_3d' in det:
                 print(f"Boxes 3D structure for Sample {sample_id}:")
@@ -875,9 +881,9 @@ class NuScenesE2EDataset(NuScenesDataset):
         """
 
         assert isinstance(results, list), 'results must be a list'
-        assert len(results) == len(self), (
-            'The length of results is not equal to the dataset len: {} != {}'.
-            format(len(results), len(self)))
+        # assert len(results) == len(self), (
+        #     'The length of results is not equal to the dataset len: {} != {}'.
+        #     format(len(results), len(self)))
 
         if jsonfile_prefix is None:
             tmp_dir = tempfile.TemporaryDirectory()
@@ -905,7 +911,11 @@ class NuScenesE2EDataset(NuScenesDataset):
         print('Start to convert detection format...')
         for sample_id, det in enumerate(mmcv.track_iter_progress(results)):
             annos = []
-            sample_token = self.data_infos[sample_id]['token']
+            for i in range(len(results)):
+                for j in range(len(self.data_infos)):
+                    if self.data_infos[j]['token'] == results[i]['token']:
+                        sample_token = self.data_infos[j]['token']
+                        print(f'sample_id and i, j{sample_id, i, j}')
 
             if det is None:
                 nusc_annos[sample_token] = annos
@@ -979,9 +989,9 @@ class NuScenesE2EDataset(NuScenesDataset):
                 `jsonfile_prefix` is not specified.
         """
         assert isinstance(results, list), 'results must be a list'
-        assert len(results) == len(self), (
-            'The length of results is not equal to the dataset len: {} != {}'.
-            format(len(results), len(self)))
+        # assert len(results) == len(self), (
+        #     'The length of results is not equal to the dataset len: {} != {}'.
+        #     format(len(results), len(self)))
 
         if jsonfile_prefix is None:
             tmp_dir = tempfile.TemporaryDirectory()
@@ -991,7 +1001,7 @@ class NuScenesE2EDataset(NuScenesDataset):
 
         result_files = self._format_bbox_det(results, jsonfile_prefix)
         return result_files, tmp_dir
-
+    
     def evaluate(self,
                  results,
                  metric='bbox',
@@ -1001,7 +1011,8 @@ class NuScenesE2EDataset(NuScenesDataset):
                  show=False,
                  out_dir=None,
                  pipeline=None,
-                 planning_evaluation_strategy="uniad"):
+                 planning_evaluation_strategy="uniad",
+                 csv_file_path=None):
 
         """
         nuScenesプロトコルでの評価。
@@ -1022,105 +1033,188 @@ class NuScenesE2EDataset(NuScenesDataset):
         戻り値:
             dict[str, float]: 各評価指標の結果を含む辞書。
         """
+        # results の最初の要素のキーを表示
+        tokens = [entry['token'] for entry in results['bbox_results']]
+        print(f'tokens{tokens}')
+        print(f'results {results.keys()}')
+        print(f'results {type(results["bbox_results"][0])}')
+        print(f'results {results["bbox_results"][0].keys()}')
+        print(f'length of results["bbox_results"] {len(results["bbox_results"])}')
+        # print(f'length of iou: {len(results["occ_results_computed"]["iou"])}')
+        # print(f'length of pq: {len(results["occ_results_computed"]["pq"])}')
+        # print(f'length of sq: {len(results["occ_results_computed"]["sq"])}')
+        # print(f'length of rq: {len(results["occ_results_computed"]["rq"])}')
+        # print(f'length of denominator: {len(results["occ_results_computed"]["denominator"])}')
+        # # print(f'occ_results_computed"].keys {results["occ_results_computed"].keys()}')
+        # print(f'rplanning_results_computed"].keys( {results["planning_results_computed"].keys()}')
+        # # print(f'type(results["occ_results_computed"]["pq"] {type(results["occ_results_computed"]["pq"])}')
+        # print(f'type(results["planning_results_computed"]["obj_col"] {type(results["planning_results_computed"]["obj_col"])}')
+        # print(f'type(results["planning_results_computed"]["obj_box_col"]) {type(results["planning_results_computed"]["obj_box_col"])}')
+        # print(f'type(results["planning_results_computed"]["L2"] {type(results["planning_results_computed"]["L2"])}')
+        # # print(f'type(results["occ_results_computed"]["pq"][0] {type(results["occ_results_computed"]["pq"][0])}')
+        # print(f'results["planning_results_computed"]["obj_col"].shape {results["planning_results_computed"]["obj_col"].shape}') 
+        # print(f'results["planning_results_computed"]["obj_box_col"].shape {results["planning_results_computed"]["obj_box_col"].shape}')
+        # print(f'results["planning_results_computed"]["L2"].shape {results["planning_results_computed"]["L2"].shape}')
+        for i in range(len(results["planning_results_computed"]["obj_col"])):
+            print(f"Frame {i}: obj_col = {results['planning_results_computed']['obj_col'][i].item()}")
+            print(f"Frame {i}: obj_box_col = {results['planning_results_computed']['obj_box_col'][i].item()}")
+            print(f"Frame {i}: L2 = {results['planning_results_computed']['L2'][i].item()}")
 
-        if isinstance(results, dict):
-            if 'occ_results_computed' in results.keys():
-                occ_results_computed = results['occ_results_computed']
-                out_metrics = ['iou']
+        # csvファイルが指定されている場合、csvファイルを読み込む
+        if csv_file_path:
+            csv_data = pd.read_csv(csv_file_path)
+            
+            condition_labels = ['left', 'straight', 'right']
+            csv_data['Condition'] = pd.cut(csv_data['Steering Angle'], bins=[-np.inf, -1, 1, np.inf], labels=condition_labels)
 
-                # pan_eval
-                if occ_results_computed.get('pq', None) is not None:
-                    out_metrics = ['iou', 'pq', 'sq', 'rq']
+        # 結果を条件ごとに分割し、辞書型に格納
+        results_left = {'bbox_results': [], 'occ_results_computed': {'pq': [], 'sq': [], 'rq': [], 'denominator': [], 'iou': [], 'num_occ': [], 'ratio_occ': []}, 'planning_results_computed': []}
+        results_straight = {'bbox_results': [], 'occ_results_computed': {'pq': [], 'sq': [], 'rq': [], 'denominator': [], 'iou': [], 'num_occ': [], 'ratio_occ': []}, 'planning_results_computed': []}
+        results_right = {'bbox_results': [], 'occ_results_computed': {'pq': [], 'sq': [], 'rq': [], 'denominator': [], 'iou': [], 'num_occ': [], 'ratio_occ': []}, 'planning_results_computed': []}
 
-                print("Occ-flow Val Results:")
-                for panoptic_key in out_metrics:
-                    print(panoptic_key)
-                    # HERE!! connect
-                    print(' & '.join(
-                        [f'{x:.1f}' for x in occ_results_computed[panoptic_key]]))
 
-                if 'num_occ' in occ_results_computed.keys() and 'ratio_occ' in occ_results_computed.keys():
-                    print(
-                        f"num occ evaluated:{occ_results_computed['num_occ']}")
-                    print(
-                        f"ratio occ evaluated: {occ_results_computed['ratio_occ'] * 100:.1f}%")
-            if 'planning_results_computed' in results.keys():
-                planning_results_computed = results['planning_results_computed']
-                planning_tab = PrettyTable()
-                planning_tab.title = f"{planning_evaluation_strategy}'s definition planning metrics"
-                planning_tab.field_names = [
-                    "metrics", "0.5s", "1.0s", "1.5s", "2.0s", "2.5s", "3.0s"]
-                for key in planning_results_computed.keys():
-                    value = planning_results_computed[key]
-                    row_value = []
-                    row_value.append(key)
-                    for i in range(len(value)):
-                        if planning_evaluation_strategy == "stp3":
-                            row_value.append("%.4f" % float(value[: i + 1].mean()))
-                        elif planning_evaluation_strategy == "uniad":
-                            row_value.append("%.4f" % float(value[i]))
-                        else:
-                            raise ValueError(
-                                "planning_evaluation_strategy should be uniad or spt3"
-                            )
-                    planning_tab.add_row(row_value)
-                print(planning_tab)
-            results = results['bbox_results']  # get bbox_results
+        results_left['planning_results_computed'] = copy.deepcopy(results['planning_results_computed'])
+        results_straight['planning_results_computed'] = copy.deepcopy(results['planning_results_computed'])
+        results_right['planning_results_computed'] = copy.deepcopy(results['planning_results_computed'])
+        results_left['occ_results_computed'] = copy.deepcopy(results['occ_results_computed'])
+        results_straight['occ_results_computed'] = copy.deepcopy(results['occ_results_computed'])
+        results_right['occ_results_computed'] = copy.deepcopy(results['occ_results_computed'])
 
-        result_files, tmp_dir = self.format_results(results, jsonfile_prefix)
-        result_files_det, tmp_dir = self.format_results_det(
-            results, jsonfile_prefix)
-        
-        print("Results filesaaaaa:", result_files, result_files_det)
+        for index, row in csv_data.iterrows():
+            if index == 0:
+                continue
+            token = row['token']
+            condition = row['Condition']
+            
+            for result_index, result in enumerate(results['bbox_results']):
+                if result['token'] == token:
+                    if condition == 'left':
+                        results_left['bbox_results'].append(results['bbox_results'][result_index])
+                        print(f"Frame {index}: Condition = {condition}")
+                    elif condition == 'straight':
+                        results_straight['bbox_results'].append(results['bbox_results'][result_index])
+                        print(f"Frame {index}: Condition = {condition}")
+                    elif condition == 'right':
+                        results_right['bbox_results'].append(results['bbox_results'][result_index])
+                        print(f"Frame {index}: Condition = {condition}")
 
-        if isinstance(result_files, dict):
-            print('Evaluating bboxes of multiple results')
-            results_dict = dict()
-            for name in result_names:
-                print('Evaluating bboxes of {}'.format(name))
-                ret_dict = self._evaluate_single(
-                    result_files[name], result_files_det[name])
-            results_dict.update(ret_dict)
-        elif isinstance(result_files, str):
-            print('444444444444')
-            results_dict = self._evaluate_single(
-                result_files, result_files_det)
+        print(f'Left {len(results_left["bbox_results"])}')
+        print(f'Straight {len(results_straight["bbox_results"])}')
+        print(f'Right {len(results_right["bbox_results"])}')
+        tokens = [entry['token'] for entry in results_left['bbox_results']]
+        print(f'tokens{tokens}')
+        print(f'length of iou: {len(results_left["occ_results_computed"]["iou"])}')
+        print(f'length of pq: {len(results_left["occ_results_computed"]["pq"])}')
+        print(f'length of sq: {len(results_left["occ_results_computed"]["sq"])}')
+        print(f'length of rq: {len(results_left["occ_results_computed"]["rq"])}')
+        print(f'length of denominator: {len(results_left["occ_results_computed"]["denominator"])}')
 
-        if 'map' in self.eval_mod:
-            drivable_intersection = 0
-            drivable_union = 0
-            lanes_intersection = 0
-            lanes_union = 0
-            divider_intersection = 0
-            divider_union = 0
-            crossing_intersection = 0
-            crossing_union = 0
-            contour_intersection = 0
-            contour_union = 0
-            for i in range(len(results)):
-                drivable_intersection += results[i]['ret_iou']['drivable_intersection']
-                drivable_union += results[i]['ret_iou']['drivable_union']
-                lanes_intersection += results[i]['ret_iou']['lanes_intersection']
-                lanes_union += results[i]['ret_iou']['lanes_union']
-                divider_intersection += results[i]['ret_iou']['divider_intersection']
-                divider_union += results[i]['ret_iou']['divider_union']
-                crossing_intersection += results[i]['ret_iou']['crossing_intersection']
-                crossing_union += results[i]['ret_iou']['crossing_union']
-                contour_intersection += results[i]['ret_iou']['contour_intersection']
-                contour_union += results[i]['ret_iou']['contour_union']
-            results_dict.update({'drivable_iou': float(drivable_intersection / drivable_union),
-                                 'lanes_iou': float(lanes_intersection / lanes_union),
-                                 'divider_iou': float(divider_intersection / divider_union),
-                                 'crossing_iou': float(crossing_intersection / crossing_union),
-                                 'contour_iou': float(contour_intersection / contour_union)})
+        all_results_dict = {}
 
-            print(results_dict)
+        for result_dir in [results_left, results_straight, results_right]:
+            print(f'type{type(result_dir)}')
+            if isinstance(result_dir, dict):
+                if 'occ_results_computed' in result_dir.keys():
+                    occ_results_computed = result_dir['occ_results_computed']
+                    out_metrics = ['iou']
 
-        if tmp_dir is not None:
-            tmp_dir.cleanup()
+                    print(F'TYPE (occ_results_computed): {type(occ_results_computed)}')
+                    print(F'KEYS (occ_results_computed): {occ_results_computed.keys()}')
 
-        if show:
-            self.show(results, out_dir, pipeline=pipeline)
+                    # pan_eval
+                    if occ_results_computed.get('pq', None) is not None:
+                        out_metrics = ['iou', 'pq', 'sq', 'rq']
+
+                    print("Occ-flow Val Results:")
+                    for panoptic_key in out_metrics:
+                        print(panoptic_key)
+                        # HERE!! connect
+                        print(' & '.join(
+                            [f'{x:.1f}' for x in occ_results_computed[panoptic_key]]))
+
+                    if 'num_occ' in occ_results_computed.keys() and 'ratio_occ' in occ_results_computed.keys():
+                        print(
+                            f"num occ evaluated:{occ_results_computed['num_occ']}")
+                        print(
+                            f"ratio occ evaluated: {occ_results_computed['ratio_occ'] * 100:.1f}%")
+                if 'planning_results_computed' in result_dir.keys():
+                    planning_results_computed = result_dir['planning_results_computed']
+                    planning_tab = PrettyTable()
+                    planning_tab.title = f"{planning_evaluation_strategy}'s definition planning metrics"
+                    planning_tab.field_names = [
+                        "metrics", "0.5s", "1.0s", "1.5s", "2.0s", "2.5s", "3.0s"]
+                    for key in planning_results_computed.keys():
+                        value = planning_results_computed[key]
+                        row_value = []
+                        row_value.append(key)
+                        for i in range(len(value)):
+                            if planning_evaluation_strategy == "stp3":
+                                row_value.append("%.4f" % float(value[: i + 1].mean()))
+                            elif planning_evaluation_strategy == "uniad":
+                                row_value.append("%.4f" % float(value[i]))
+                            else:
+                                raise ValueError(
+                                    "planning_evaluation_strategy should be uniad or spt3"
+                                )
+                        planning_tab.add_row(row_value)
+                    print(planning_tab)
+                result_dir = result_dir['bbox_results']  # get bbox_results
+
+            result_files, tmp_dir = self.format_results(result_dir, jsonfile_prefix)
+            result_files_det, tmp_dir = self.format_results_det(
+                result_dir, jsonfile_prefix)
+            
+            print("Results filesaaaaa:", result_files, result_files_det)
+
+            if isinstance(result_files, dict):
+                print('Evaluating bboxes of multiple result_dir')
+                results_dict = dict()
+                for name in result_names:
+                    print('Evaluating bboxes of {}'.format(name))
+                    ret_dict = self._evaluate_single(
+                        result_files[name], result_files_det[name])
+                results_dict.update(ret_dict)
+            elif isinstance(result_files, str):
+                print('444444444444')
+                results_dict = self._evaluate_single(
+                    result_files, result_files_det)
+
+            if 'map' in self.eval_mod:
+                drivable_intersection = 0
+                drivable_union = 0
+                lanes_intersection = 0
+                lanes_union = 0
+                divider_intersection = 0
+                divider_union = 0
+                crossing_intersection = 0
+                crossing_union = 0
+                contour_intersection = 0
+                contour_union = 0
+                for i in range(len(result_dir)):
+                    drivable_intersection += result_dir[i]['ret_iou']['drivable_intersection']
+                    drivable_union += result_dir[i]['ret_iou']['drivable_union']
+                    lanes_intersection += result_dir[i]['ret_iou']['lanes_intersection']
+                    lanes_union += result_dir[i]['ret_iou']['lanes_union']
+                    divider_intersection += result_dir[i]['ret_iou']['divider_intersection']
+                    divider_union += result_dir[i]['ret_iou']['divider_union']
+                    crossing_intersection += result_dir[i]['ret_iou']['crossing_intersection']
+                    crossing_union += result_dir[i]['ret_iou']['crossing_union']
+                    contour_intersection += result_dir[i]['ret_iou']['contour_intersection']
+                    contour_union += result_dir[i]['ret_iou']['contour_union']
+                results_dict.update({'drivable_iou': float(drivable_intersection / drivable_union),
+                                    'lanes_iou': float(lanes_intersection / lanes_union),
+                                    'divider_iou': float(divider_intersection / divider_union),
+                                    'crossing_iou': float(crossing_intersection / crossing_union),
+                                    'contour_iou': float(contour_intersection / contour_union)})
+
+                print(results_dict)
+
+            if tmp_dir is not None:
+                tmp_dir.cleanup()
+
+            if show:
+                self.show(result_dir, out_dir, pipeline=pipeline)
+            all_results_dict.update(results_dict)
         return results_dict
 
     def _evaluate_single(self,
@@ -1153,8 +1247,9 @@ class NuScenesE2EDataset(NuScenesDataset):
         mmcv.mkdir_or_exist(output_dir_track)
         mmcv.mkdir_or_exist(output_dir_motion)
 
+        # !!!!!!ここで変更
         eval_set_map = {
-            'v1.0-mini': 'mini_train',
+            'v1.0-mini': 'mini_val',
             'v1.0-trainval': 'val',
         }
         detail = dict()

@@ -90,10 +90,6 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
     for i, data in enumerate(data_loader):
         with torch.no_grad():
             result = model(return_loss=False, rescale=True, **data)
-            # print(f'111111111111111data: {len(data["img"][0].data)}')
-            # print(f'111111111111111data: {data["img"][0].data[0].shape}')
-            # print(f'results: {len(result)}')
-            # print(f'results: {result[0].keys()}')
 
             # EVAL planning
             if eval_planning:

@@ -380,7 +380,7 @@ def main(args):
         sample_token = viser.nusc.sample[i]['token']
         scene_token = viser.nusc.sample[i]['scene_token']
 
-        # サンプルがvalidationデータに含まれていない場合、スキップ
+        # !!!!!!!visualizeするときはここを変更サンプルがvalidationデータに含まれていない場合、スキップ
         if not viser.nusc.version.endswith('mini') and scene_token_to_name[scene_token] not in val_splits:
             continue
 

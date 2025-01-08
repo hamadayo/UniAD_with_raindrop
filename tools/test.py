@@ -87,6 +87,7 @@ def parse_args():
         default='none',
         help='job launcher')
     parser.add_argument('--local_rank', type=int, default=0)
+    parser.add_argument('--datasets', type=str, default=None, help='dataset name')
     args = parser.parse_args()
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
@@ -291,7 +292,9 @@ def main():
             eval_kwargs.update(dict(metric=args.eval, **kwargs))
             print('8888888')
 
-            print(dataset.evaluate(outputs, **eval_kwargs))
+            csv_path = '/home/yoshi-22/RaindropsOnWindshield/raindrops_generator/ego_steer.csv' if args.datasets =='mini' else None
+            print(f'csv_path {csv_path}')
+            print(dataset.evaluate(outputs, **eval_kwargs, csv_file_path=csv_path))
 
 # mmdetection3dのテストスクリプト
 # 指定したデータ・セットで推論を行い、結果を保存、評価、表示する

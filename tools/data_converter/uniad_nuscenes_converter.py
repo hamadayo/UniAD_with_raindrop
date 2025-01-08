@@ -55,7 +55,9 @@ def create_nuscenes_infos(root_path,
         val_scenes = []
     elif version == 'v1.0-mini':
         train_scenes = splits.mini_train
-        val_scenes = list(set(splits.mini_val + splits.mini_train))
+        # !!!!!!! ここを変更
+        # val_scenes = list(set(splits.mini_val + splits.mini_train))
+        val_scenes = splits.mini_val
         print(f"Train scenes: {train_scenes}")
         print(f"Val scenes: {val_scenes}")
 
@@ -72,10 +74,15 @@ def create_nuscenes_infos(root_path,
         available_scenes[available_scene_names.index(s)]['token']
         for s in train_scenes
     ])
+    # !!!!!!!ここを変更
     val_scenes = set([
-        s['token']
-        for s in available_scenes
+        available_scenes[available_scene_names.index(s)]['token']
+        for s in val_scenes
     ])
+    # val_scenes = set([
+    #     s['token']
+    #     for s in available_scenes
+    # ])
 
     print(f"Train scenes: {len(train_scenes)}, Val scenes: {len(val_scenes)}")
     test = 'test' in version

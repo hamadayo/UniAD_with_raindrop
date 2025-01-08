@@ -257,14 +257,17 @@ def load_gt(nusc: NuScenes, eval_split: str, box_cls, verbose: bool = False):
         scene_token = nusc.get('sample', sample_token)['scene_token']
         scene_record = nusc.get('scene', scene_token)
         
-        # miniデータセットの場合、スプリットを無効にする
-        if nusc.version.endswith('mini'):
-            # すべてのサンプルを追加
+        #!!!!!!!!ここを変更
+        if scene_record['name'] in splits[eval_split]:
             sample_tokens.append(sample_token)
-        else:
-            # スプリットに従ってフィルタリング
-            if scene_record['name'] in splits[eval_split]:
-                sample_tokens.append(sample_token)
+        # # miniデータセットの場合、スプリットを無効にする
+        # if nusc.version.endswith('mini'):
+        #     # すべてのサンプルを追加
+        #     sample_tokens.append(sample_token)
+        # else:
+        #     # スプリットに従ってフィルタリング
+        #     if scene_record['name'] in splits[eval_split]:
+        #         sample_tokens.append(sample_token)
 
     all_annotations = EvalBoxes()
 
