@@ -12,6 +12,12 @@ from projects.mmdet3d_plugin.models.utils.functional import bivariate_gaussian_a
 from .planning_head_plugin import CollisionNonlinearOptimizer
 import numpy as np
 import copy
+from projects.mmdet3d_plugin.uniad.modules.transformer_with_attn import (
+    TransformerDecoderLayerWithAttn,
+    TransformerDecoderWithAttn
+)
+
+import matplotlib.pyplot as plt
 
 @HEADS.register_module()
 class PlanningHeadSingleMode(nn.Module):
@@ -60,8 +66,9 @@ class PlanningHeadSingleMode(nn.Module):
         
         #### planning head
         fuser_dim = 3
-        attn_module_layer = nn.TransformerDecoderLayer(embed_dims, 8, dim_feedforward=embed_dims*2, dropout=0.1, batch_first=False)
-        self.attn_module = nn.TransformerDecoder(attn_module_layer, 3)
+        # !!!!!!!!planning attnの可視化用
+        attn_module_layer = TransformerDecoderLayerWithAttn(embed_dims, 8, dim_feedforward=embed_dims*2, dropout=0.1, batch_first=False)
+        self.attn_module = TransformerDecoderWithAttn(attn_module_layer, 3)
         
         self.mlp_fuser = nn.Sequential(
                 nn.Linear(embed_dims*fuser_dim, embed_dims),
@@ -185,8 +192,9 @@ class PlanningHeadSingleMode(nn.Module):
         
         # plan_query: [1, 1, 256]
         # bev_feat: [40000, 1, 256]
-        plan_query = self.attn_module(plan_query, bev_feat)   # [1, 1, 256]
-        
+        plan_query, self_attn_list, cross_attn_list = self.attn_module(plan_query, bev_feat)   # [1, 1, 256]
+        print(f'aaaaaaaaaaaaaaaa {plan_query.shape, self_attn_list[0].shape, cross_attn_list[0].shape}')
+
         sdc_traj_all = self.reg_branch(plan_query).view((-1, self.planning_steps, 2))
         sdc_traj_all[...,:2] = torch.cumsum(sdc_traj_all[...,:2], dim=1)
         sdc_traj_all[0] = bivariate_gaussian_activation(sdc_traj_all[0])
@@ -195,9 +203,12 @@ class PlanningHeadSingleMode(nn.Module):
             assert occ_mask is not None
             sdc_traj_all = self.collision_optimization(sdc_traj_all, occ_mask)
         
+        # !!!!!!!!planning attnの可視化用
         return dict(
             sdc_traj=sdc_traj_all,
             sdc_traj_all=sdc_traj_all,
+            elf_attn_list=self_attn_list,
+            cross_attn_list=cross_attn_list,
         )
 
     def collision_optimization(self, sdc_traj_all, occ_mask):

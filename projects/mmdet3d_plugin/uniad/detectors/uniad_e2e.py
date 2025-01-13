@@ -48,6 +48,7 @@ class UniAD(UniADTrack):
                {'track', 'occ', 'motion', 'map', 'planning'}
 
     @property
+    # !!!!!ここで全てのheadがあるかどうかを判定する
     def with_planning_head(self):
         return hasattr(self, 'planning_head') and self.planning_head is not None
     
@@ -299,6 +300,13 @@ class UniAD(UniADTrack):
         if self.with_seg_head:
             result_seg =  self.seg_head.forward_test(bev_embed, gt_lane_labels, gt_lane_masks, img_metas, rescale)
 
+            # !!!!ここでcpuで行うように
+            if 'pts_bbox' in result_seg[0]:
+                for k, v in result_seg[0]['pts_bbox'].items():
+                    if isinstance(v, torch.Tensor):
+                        result_seg[0]['pts_bbox'][k] = v.detach().cpu()
+
+
         if self.with_motion_head:
             result_motion, outs_motion = self.motion_head.forward_test(bev_embed, outs_track=result_track[0], outs_seg=result_seg[0])
             outs_motion['bev_pos'] = result_track[0]['bev_pos']
@@ -328,12 +336,17 @@ class UniAD(UniADTrack):
                 planning_gt=planning_gt,
                 result_planning=result_planning,
             )
+         # !!!!! planning用 'self_attn_list' と 'cross_attn_list' を result'bbox_results' に直接追加
+        result[0]['self_attn_list'] = result_planning.get('elf_attn_list', [])
+        result[0]['cross_attn_list'] = result_planning.get('cross_attn_list', [])
 
         pop_track_list = ['prev_bev', 'bev_pos', 'bev_embed', 'track_query_embeddings', 'sdc_embedding']
         result_track[0] = pop_elem_in_result(result_track[0], pop_track_list)
 
+        # !!!!!!ここでRAMを圧迫しないようデータを削除する
         if self.with_seg_head:
             result_seg[0] = pop_elem_in_result(result_seg[0], pop_list=['pts_bbox', 'args_tuple'])
+            pass
         if self.with_motion_head:
             result_motion[0] = pop_elem_in_result(result_motion[0])
         if self.with_occ_head:

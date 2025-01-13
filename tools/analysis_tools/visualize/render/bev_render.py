@@ -197,6 +197,7 @@ class BEVRender(BaseRender):
 
     def render_planning_attn_mask(self, predicted_planning):
         planning_attn_mask = predicted_planning.attn_mask
+        planning_attn_mask = planning_attn_mask.cpu().numpy()
         planning_attn_mask = planning_attn_mask/planning_attn_mask.max()
         cmap_name = 'plasma'
         self.axes.imshow(planning_attn_mask, alpha=0.8, interpolation='nearest', extent=(

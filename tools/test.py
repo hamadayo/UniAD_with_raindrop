@@ -17,11 +17,53 @@ from projects.mmdet3d_plugin.datasets.builder import build_dataloader
 from mmdet3d.models import build_model
 from mmdet.apis import set_random_seed
 from projects.mmdet3d_plugin.uniad.apis.test import custom_multi_gpu_test
+from projects.mmdet3d_plugin.uniad.apis.custom_test import my_custom_multi_gpu_test
 from mmdet.datasets import replace_ImageToTensor
 import time
 import os.path as osp
 
+import matplotlib.pyplot as plt
+import numpy as np
+import pickle
+
 warnings.filterwarnings("ignore")
+
+activations = {} 
+
+def tensor_to_heatmap(feature_map: torch.Tensor) -> np.ndarray:
+    """
+    feature_map: 形状が (C, H, W) のTensor (1枚のカメラ分)を想定。
+    戻り値: ヒートマップ（カラー）のBGR画像 (H, W, 3)
+    """
+    # ---- 1. チャネル方向を平均して1枚にする (H, W)
+    # 必要に応じて mean/max/sum などを切り替える
+    heatmap = feature_map.mean(dim=0)  # -> shape: (H, W)
+
+    # ---- 2. テンソル → numpy & 正規化
+    heatmap = heatmap.detach().cpu().numpy()
+    heatmap -= heatmap.min()
+    if heatmap.max() > 0:
+        heatmap /= heatmap.max()
+    heatmap = (heatmap * 255).astype(np.uint8)
+
+    # ---- 3. カラーマップを適用 (OpenCVはBGR)
+    heatmap_color = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+    return heatmap_color
+
+def overlay_heatmap_on_image(image_bgr: np.ndarray, heatmap_bgr: np.ndarray, alpha=0.5) -> np.ndarray:
+    """
+    image_bgr: 元画像 (H, W, 3)
+    heatmap_bgr: ヒートマップ (H, W, 3)
+    alpha: ヒートマップ重ねる割合
+    戻り値: ヒートマップを重ね合わせたBGR画像
+    """
+    # サイズが違う場合は合わせる
+    if (image_bgr.shape[0] != heatmap_bgr.shape[0]) or (image_bgr.shape[1] != heatmap_bgr.shape[1]):
+        heatmap_bgr = cv2.resize(heatmap_bgr, (image_bgr.shape[1], image_bgr.shape[0]))
+
+    # addWeighted でオーバーレイ
+    overlaid = cv2.addWeighted(image_bgr, 1 - alpha, heatmap_bgr, alpha, 0)
+    return overlaid
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -87,7 +129,6 @@ def parse_args():
         default='none',
         help='job launcher')
     parser.add_argument('--local_rank', type=int, default=0)
-    parser.add_argument('--datasets', type=str, default=None, help='dataset name')
     args = parser.parse_args()
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
@@ -235,6 +276,59 @@ def main():
     checkpoint = load_checkpoint(model, args.checkpoint, map_location='cpu')
     if args.fuse_conv_bn:
         model = fuse_conv_bn(model)
+
+    def get_activation_hook(name):
+        def hook(module, input, output):
+            print(f"[HOOK CALLED] {name}")
+            if name not in activations:
+                activations[name] = [] 
+
+            # module: フックを登録した層 (nn.Module)
+            # input:  その層に入ってきた入力 (tuple of Tensor)
+            # output: その層から出力される出力 (Tensor or tuple of Tensor)
+
+            x = input[0] if isinstance(input, (list, tuple)) else input
+            if isinstance(x, torch.Tensor):
+                print(f"[{name}] input shape: {x.shape}")
+            else:
+                print(f"[{name}] input is a {type(x)}")
+
+            # 出力に対して
+            if isinstance(output, torch.Tensor):
+                # 通常のTensorの場合
+                print(f"[{name}] output shape: {output.shape}")
+            elif isinstance(output, (list, tuple)):
+                # タプルやリストなら要素ごとに
+                for i, out in enumerate(output):
+                    if isinstance(out, torch.Tensor):
+                        print(f"[{name}] output[{i}] shape: {out.shape}")
+                    else:
+                        print(f"[{name}] output[{i}] is a {type(out)}")
+            else:
+                print(f"[{name}] output is a {type(output)}")
+            
+            activations[name].append(output.detach().cpu())
+            print(f'activation shape: {output.shape}')
+            print(f'activation shape: {activations[name][-1].shape}')
+        return hook
+    # print('model:', model)
+    # TemporalSelfAttentionとSpatialCrossAttentionを対象にフックを登録
+
+    # !!!!!!!個々変更
+    valid_names = [
+        # 'img_backbone.layer4.2'
+        'pts_bbox_head.transformer.encoder.layers.5.attentions.1.deformable_attention.sampling_offsets',
+        'pts_bbox_head.transformer.encoder.layers.5.attentions.1.deformable_attention.attention_weights',
+        'pts_bbox_head.transformer.decoder.layers.5.attentions.1.sampling_offsets',
+        'pts_bbox_head.transformer.decoder.layers.5.attentions.1.attention_weights',
+    ]
+
+    for name, module in model.named_modules():
+        # print(f'Registering hook for {name}')
+        if name in valid_names:
+            print(f'Registering hook for {name}')
+            module.register_forward_hook(get_activation_hook(name))
+
     # old versions did not save class info in checkpoints, this walkaround is
     # for backward compatibility
     # チェックポイントにクラス情報が含まれていない場合、データセットのクラス情報を使用する
@@ -262,11 +356,130 @@ def main():
             model.cuda(),
             device_ids=[torch.cuda.current_device()],
             broadcast_buffers=False)
-        outputs = custom_multi_gpu_test(model, data_loader, args.tmpdir,
+        outputs = my_custom_multi_gpu_test(model, data_loader, args.tmpdir,
                                         args.gpu_collect)
+        print('iiiiiiiiiiiiiii')
 
-    print('fififififififfinish')
     rank, _ = get_dist_info()
+
+    pkl_path = '/home/yoshi-22/UniAD/data/infos/nuscenes_infos_temporal_val_before.pkl'
+    with open(pkl_path, 'rb') as f:
+        data = pickle.load(f)
+    
+    infos = data['infos']
+
+    cam_out_path = [
+        '/home/yoshi-22/UniAD/outputs/CAM_FRONT',
+        '/home/yoshi-22/UniAD/outputs/CAM_FRONT_RIGHT',
+        '/home/yoshi-22/UniAD/outputs/CAM_FRONT_LEFT',
+        '/home/yoshi-22/UniAD/outputs/CAM_BACK',
+        '/home/yoshi-22/UniAD/outputs/CAM_BACK_LEFT',
+        '/home/yoshi-22/UniAD/outputs/CAM_BACK_RIGHT'
+    ]
+
+    cam_names = [
+        'CAM_FRONT',
+        'CAM_FRONT_RIGHT',
+        'CAM_FRONT_LEFT',
+        'CAM_BACK',
+        'CAM_BACK_LEFT',
+        'CAM_BACK_RIGHT'
+    ]
+
+
+    # !!!!!!!個々変更
+    name = 'pts_bbox_head.transformer.encoder.layers.5.attentions.1.deformable_attention.attention_weights'
+    my_activations = outputs['my_activations']
+
+    print(my_activations.keys())
+    print(type(my_activations[name].keys()))
+    print(len(my_activations[name]))
+    print(my_activations[name].keys())
+
+    # for i in sorted(my_activations[name].keys()):
+    #     if 79 <= i <= 119:
+    #         feat_i = my_activations[name][i + 41]
+    #         print(f"Processing frame {i, i + 41}")
+    #     elif 120 <= i <= 160:
+    #         feat_i = my_activations[name][i - 41]
+    #         print(f"Processing frame {i, i -41}")
+    #     else:
+    #         feat_i = my_activations[name][i]
+    #         print(f"Processing frame {i}")
+
+
+    #     info_i = infos[i]
+
+    #     for cam_idx in range(6):
+    #         single_feat_map = feat_i[cam_idx]
+    #         # カメラごとのファイル名に cam_names[cam_idx] を入れる
+    #         heatmap_bgr = tensor_to_heatmap(single_feat_map)
+
+    #         # 入力画像のパス
+    #         img_path = info_i['cams'][cam_names[cam_idx]]['data_path']
+    #         print(f"Reading image: {img_path}")
+    #         image_bgr = cv2.imread(img_path)
+    #         if image_bgr is None:
+    #             print(f"Failed to read image: {img_path}")
+    #             continue
+
+    #         # feat[cam_idx] → (C, H, W)
+    #         overlaid = overlay_heatmap_on_image(image_bgr, heatmap_bgr, alpha=0.5)
+
+    #         # 出力ファイル名
+    #         out_name = os.path.basename(img_path)
+    #         # ディレクトリが存在するかを事前にチェック
+    #         if not os.path.exists(cam_out_path[cam_idx]):
+    #             os.makedirs(cam_out_path[cam_idx], exist_ok=True)
+    #             print(f"Directory created: {cam_out_path[cam_idx]}")
+    #         else:
+    #             print(f"Directory already exists: {cam_out_path[cam_idx]}")
+    #         out_path = os.path.join(cam_out_path[cam_idx], out_name)
+    #         cv2.imwrite(out_path, overlaid)
+    #         print(f"Heatmap saved to {out_path}")
+
+    for i in sorted(my_activations[name].keys()):
+        if 79 <= i <= 119:
+            feat_i = my_activations[name][i + 41]
+            print(f"Processing frame {i, i + 41}")
+        elif 120 <= i <= 160:
+            feat_i = my_activations[name][i - 41]
+            print(f"Processing frame {i, i -41}")
+        else:
+            feat_i = my_activations[name][i]
+            print(f"Processing frame {i}")
+
+
+        info_i = infos[i]
+
+        for cam_idx in range(6):
+            single_feat_map = feat_i[cam_idx]
+            # カメラごとのファイル名に cam_names[cam_idx] を入れる
+            heatmap_bgr = tensor_to_heatmap(single_feat_map)
+
+            # 入力画像のパス
+            img_path = info_i['cams'][cam_names[cam_idx]]['data_path']
+            print(f"Reading image: {img_path}")
+            image_bgr = cv2.imread(img_path)
+            if image_bgr is None:
+                print(f"Failed to read image: {img_path}")
+                continue
+
+            # feat[cam_idx] → (C, H, W)
+            overlaid = overlay_heatmap_on_image(image_bgr, heatmap_bgr, alpha=0.5)
+
+            # 出力ファイル名
+            out_name = os.path.basename(img_path)
+            # ディレクトリが存在するかを事前にチェック
+            if not os.path.exists(cam_out_path[cam_idx]):
+                os.makedirs(cam_out_path[cam_idx], exist_ok=True)
+                print(f"Directory created: {cam_out_path[cam_idx]}")
+            else:
+                print(f"Directory already exists: {cam_out_path[cam_idx]}")
+            out_path = os.path.join(cam_out_path[cam_idx], out_name)
+            cv2.imwrite(out_path, overlaid)
+            print(f"Heatmap saved to {out_path}")
+
     if rank == 0:
         if args.out:
             print(f'\nwriting results to {args.out}')
@@ -277,7 +490,7 @@ def main():
         kwargs['jsonfile_prefix'] = osp.join('test', args.config.split(
             '/')[-1].split('.')[-2], time.ctime().replace(' ', '_').replace(':', '_'))
         if args.format_only:
-            dataset.format_results(outputs, **kwargs)
+            dataset.format_results(outputs, **kwargs)            
 
         if args.eval:
             print('5555555')
@@ -292,9 +505,7 @@ def main():
             eval_kwargs.update(dict(metric=args.eval, **kwargs))
             print('8888888')
 
-            csv_path = '/home/yoshi-22/RaindropsOnWindshield/raindrops_generator/ego_steer.csv' if args.datasets =='mini' else None
-            print(f'csv_path {csv_path}')
-            print(dataset.evaluate(outputs, **eval_kwargs, csv_file_path=csv_path))
+            print(dataset.evaluate(outputs, **eval_kwargs))
 
 # mmdetection3dのテストスクリプト
 # 指定したデータ・セットで推論を行い、結果を保存、評価、表示する

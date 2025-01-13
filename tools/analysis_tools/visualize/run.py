@@ -79,13 +79,6 @@ class Visualizer:
         # pklファイルの読み込み
         outputs = mmcv.load(predroot)
         outputs = outputs['bbox_results']
-        # print(f'Number of samples in prediction pkl: {len(outputs)}')
-        # print(f'Number of samples in NuScenes dataset: {outputs[0].keys()}')
-        # output2 = outputs[0]['token']
-        # print(f'Number of samples in NuScenes dataset: {type(output2)}')
-        # print(f'Number of samples in NuScenes dataset: {output2}')
-        # output3 = outputs[0]['track_bbox_results']
-        # print(f'Number of samples in NuScenes dataset: {type(output3)}')
         prediction_dict = dict()
         # 1フレームごとに処理
         for k in range(len(outputs)):
@@ -205,6 +198,15 @@ class Visualizer:
                 track_dims = bboxes.dims.cpu().detach().numpy()
                 track_yaw = bboxes.yaw.cpu().detach().numpy()
                 track_velocity = bboxes.tensor.cpu().detach().numpy()[:, -2:]
+                
+                cross_attn = outputs[k]['cross_attn_list']
+                print(f'cross_attn len' , len(cross_attn))
+                print(f'cross_attn shape' , cross_attn[0].shape)
+                print(f'cross_attn[0] type' , type(cross_attn[0]))
+                if cross_attn is not None and len(cross_attn) > 0:
+                    attn_mask = cross_attn[0].squeeze().reshape(200, 200)
+                else:
+                    attn_mask = None
 
                 if self.show_command:
                     command = outputs[k]['command'][0].cpu().detach().numpy()
@@ -225,8 +227,10 @@ class Visualizer:
                     past_pred_traj=None,
                     is_sdc=True,
                     command=command,
+                    attn_mask=attn_mask
                 )
                 predicted_agent_list.append(planning_agent)
+
             else:
                 print('No planning results!')
                 planning_agent = None
@@ -261,6 +265,8 @@ class Visualizer:
                 [self.predictions[sample_token]['predicted_planning']])
             self.bev_render.render_planning_data(
                 self.predictions[sample_token]['predicted_planning'], show_command=self.show_command)
+            self.bev_render.render_planning_attn_mask(
+                self.predictions[sample_token]['predicted_planning'])
         if self.show_hd_map:
             self.bev_render.render_hd_map(
                 self.nusc, self.nusc_maps, sample_token)

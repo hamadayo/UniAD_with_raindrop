@@ -6,8 +6,7 @@ T=`date +%m%d%H%M`
 # Usually you only need to customize these variables #
 CFG=$1                                               #
 CKPT=$2                                              #
-GPUS=$3
-DATASETS=$4                                          #    
+GPUS=$3                                              #    
 # -------------------------------------------------- #
 GPUS_PER_NODE=$(($GPUS<8?$GPUS:8))
 
@@ -29,5 +28,4 @@ python -m torch.distributed.launch \
     --launcher pytorch ${@:4} \
     --eval bbox \
     --show-dir ${WORK_DIR} \
-    --datasets 'mini' \
-    > output.log 2>&1
+    2>&1 | tee ${WORK_DIR}logs/eval.$T

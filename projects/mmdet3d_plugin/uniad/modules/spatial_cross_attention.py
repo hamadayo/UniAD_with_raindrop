@@ -119,20 +119,27 @@ class SpatialCrossAttention(BaseModule):
              Tensor: forwarded results with shape [num_query, bs, embed_dims].
         """
 
+        # key, valueの初期化
         if key is None:
             key = query
         if value is None:
             value = key
 
+        # residual(残渣接続に使用するテンソル)の初期化,slots は最終的なアテンション結果を格納するバッファ
         if residual is None:
             inp_residual = query
             slots = torch.zeros_like(query)
         if query_pos is not None:
+            # queryにposition encodingを加算
             query = query + query_pos
 
+        # バッチサイズ等の取得
         bs, num_query, _ = query.size()
 
         D = reference_points_cam.size(3)
+        # BEV mask から各BEV queryのindexを取得
+        # bev_mask には「カメラi と BEVクエリj が対応するか」の情報が含まれる
+        # index_query_per_img は「カメラ i が有効な BEVクエリ」のインデックス一覧
         indexes = []
         for i, mask_per_img in enumerate(bev_mask):
             index_query_per_img = mask_per_img[0].sum(-1).nonzero().squeeze(-1)
@@ -140,6 +147,8 @@ class SpatialCrossAttention(BaseModule):
         max_len = max([len(each) for each in indexes])
 
         # each camera only interacts with its corresponding BEV queries. This step can  greatly save GPU memory.
+        # self.num_cams はカメラ枚数。max_len は先ほど求めたカメラあたり最大クエリ数
+        # カメラ単位でクエリをまとめる
         queries_rebatch = query.new_zeros(
             [bs, self.num_cams, max_len, self.embed_dims])
         reference_points_rebatch = reference_points_cam.new_zeros(
@@ -153,11 +162,13 @@ class SpatialCrossAttention(BaseModule):
 
         num_cams, l, bs, embed_dims = key.shape
 
+        # カメラ次元を展開し、カメラをまとめて “1次元” にすることで、各カメラが独立したバッチ要素のように扱える
         key = key.permute(2, 0, 1, 3).reshape(
             bs * self.num_cams, l, self.embed_dims)
         value = value.permute(2, 0, 1, 3).reshape(
             bs * self.num_cams, l, self.embed_dims)
 
+        # Deformable Attentionに分割されたクエリを与え、カメラ視点の画像特徴を参照して特徴を集約
         queries = self.deformable_attention(query=queries_rebatch.view(bs*self.num_cams, max_len, self.embed_dims), key=key, value=value,
                                             reference_points=reference_points_rebatch.view(bs*self.num_cams, max_len, D, 2), spatial_shapes=spatial_shapes,
                                             level_start_index=level_start_index).view(bs, self.num_cams, max_len, self.embed_dims)
@@ -165,6 +176,8 @@ class SpatialCrossAttention(BaseModule):
             for i, index_query_per_img in enumerate(indexes):
                 slots[j, index_query_per_img] += queries[j, i, :len(index_query_per_img)]
 
+
+        # maskによる正規化
         count = bev_mask.sum(-1) > 0
         count = count.permute(1, 2, 0).sum(-1)
         count = torch.clamp(count, min=1.0)
