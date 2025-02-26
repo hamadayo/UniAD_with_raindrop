@@ -158,6 +158,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
                 prev_bev=None,
                 shift=0.,
                 img_metas=None,
+                return_ref_cam_mask=False,
                 **kwargs):
         """Forward function for `TransformerDecoder`.
         Args:
@@ -231,7 +232,18 @@ class BEVFormerEncoder(TransformerLayerSequence):
 
         if self.return_intermediate:
             return torch.stack(intermediate)
+        #!!!!!!encoder
+        # print('encoder return_ref_cam_mask', return_ref_cam_mask)
 
+        last_layer = self.layers[-1]
+        offsets = getattr(last_layer, 'tmp_offsets', None)
+        weights = getattr(last_layer, 'tmp_weights', None)
+        print('offsets', offsets.shape)
+        print('weights', weights.shape)
+
+        # !!!!!!bev atten変更
+        if return_ref_cam_mask:
+            return output, ref_3d, reference_points_cam, bev_mask, self.pc_range, img_metas, offsets, weights
         return output
 
 
@@ -376,7 +388,8 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
 
             # spaital cross attention
             elif layer == 'cross_attn':
-                query = self.attentions[attn_index](
+                # !!!!!!!!!!!変更13
+                query, tmp_offsets, tmp_weights  = self.attentions[attn_index](
                     query,
                     key,
                     value,
@@ -393,6 +406,9 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
                     **kwargs)
                 attn_index += 1
                 identity = query
+
+                self.tmp_offsets = tmp_offsets
+                self.tmp_weights = tmp_weights
 
             elif layer == 'ffn':
                 query = self.ffns[ffn_index](

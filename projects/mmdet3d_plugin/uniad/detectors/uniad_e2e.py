@@ -251,6 +251,8 @@ class UniAD(UniADTrack):
                      gt_segmentation=None,
                      gt_instance=None, 
                      gt_occ_img_is_valid=None,
+
+                     return_ref_cam_mask=False,
                      **kwargs
                     ):
         """Test function
@@ -290,7 +292,8 @@ class UniAD(UniADTrack):
         timestamp = timestamp[0] if timestamp is not None else None
 
         result = [dict() for i in range(len(img_metas))]
-        result_track = self.simple_test_track(img, l2g_t, l2g_r_mat, img_metas, timestamp)
+        # !!!!!!! bev attn 変更７
+        result_track = self.simple_test_track(img, l2g_t, l2g_r_mat, img_metas, timestamp, return_ref_cam_mask=return_ref_cam_mask)
 
         # Upsample bev for tiny model        
         result_track[0] = self.upsample_bev_if_tiny(result_track[0])
@@ -337,7 +340,7 @@ class UniAD(UniADTrack):
                 result_planning=result_planning,
             )
          # !!!!! planning用 'self_attn_list' と 'cross_attn_list' を result'bbox_results' に直接追加
-        result[0]['self_attn_list'] = result_planning.get('elf_attn_list', [])
+        result[0]['self_attn_list'] = result_planning.get('self_attn_list', [])
         result[0]['cross_attn_list'] = result_planning.get('cross_attn_list', [])
 
         pop_track_list = ['prev_bev', 'bev_pos', 'bev_embed', 'track_query_embeddings', 'sdc_embedding']

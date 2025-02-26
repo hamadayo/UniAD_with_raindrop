@@ -207,7 +207,7 @@ class PlanningHeadSingleMode(nn.Module):
         return dict(
             sdc_traj=sdc_traj_all,
             sdc_traj_all=sdc_traj_all,
-            elf_attn_list=self_attn_list,
+            self_attn_list=self_attn_list,
             cross_attn_list=cross_attn_list,
         )
 

@@ -58,18 +58,23 @@ def create_nuscenes_infos(root_path,
         # !!!!!!! ここを変更
         val_scenes = list(set(splits.mini_val + splits.mini_train))
         # val_scenes = splits.mini_val
-        # print(f"Train scenes: {train_scenes}")
-        # print(f"Val scenes: {val_scenes}")
+        print(f"Train scenes: {train_scenes}")
+        print(f"Val scenes: {val_scenes}")
 
     else:
         raise ValueError('unknown')
+    
+    # !!!!!!!ここを変更
+    scene_name_list = [
+        'scene-0061',  'scene-1094'
+    ]
 
     # filter existing scenes.
     available_scenes = get_available_scenes(nusc)
     available_scene_names = [s['name'] for s in available_scenes]
     train_scenes = list(
         filter(lambda x: x in available_scene_names, train_scenes))
-    val_scenes = list(filter(lambda x: x in available_scene_names, val_scenes))
+    # val_scenes = list(filter(lambda x: x in available_scene_names, val_scenes))
     train_scenes = set([
         available_scenes[available_scene_names.index(s)]['token']
         for s in train_scenes
@@ -79,10 +84,18 @@ def create_nuscenes_infos(root_path,
     #     available_scenes[available_scene_names.index(s)]['token']
     #     for s in val_scenes
     # ])
-    val_scenes = set([
-        s['token']
-        for s in available_scenes
-    ])
+    # val_scenes = set([
+    #     s['token']
+    #     for s in available_scenes
+    # ])
+    filtered_scene_names = set(scene_name_list).intersection(available_scene_names)
+    scene_name_to_token = {
+        s['name']: s['token'] for s in available_scenes
+    }
+    val_scenes = set(
+        scene_name_to_token[name] for name in filtered_scene_names
+    )
+
 
     print(f'sorted val scenes: {val_scenes}')
 

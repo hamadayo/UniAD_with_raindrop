@@ -334,7 +334,8 @@ class UniADTrack(MVXTwoStageDetector):
         return prev_bev
 
     # Generate bev using bev_encoder in BEVFormer
-    def get_bevs(self, imgs, img_metas, prev_img=None, prev_img_metas=None, prev_bev=None):
+    # !!!!!!!!bev attn変更４
+    def get_bevs(self, imgs, img_metas, prev_img=None, prev_img_metas=None, prev_bev=None, return_ref_cam_mask=False):
         if prev_img is not None and prev_img_metas is not None:
             assert prev_bev is None
             prev_bev = self.get_history_bev(prev_img, prev_img_metas)
@@ -342,17 +343,28 @@ class UniADTrack(MVXTwoStageDetector):
         img_feats = self.extract_img_feat(img=imgs)
         if self.freeze_bev_encoder:
             with torch.no_grad():
-                bev_embed, bev_pos = self.pts_bbox_head.get_bev_features(
-                    mlvl_feats=img_feats, img_metas=img_metas, prev_bev=prev_bev)
+                out = self.pts_bbox_head.get_bev_features(
+                    mlvl_feats=img_feats, img_metas=img_metas, prev_bev=prev_bev, return_ref_cam_mask=return_ref_cam_mask)
         else:
-            bev_embed, bev_pos = self.pts_bbox_head.get_bev_features(
-                    mlvl_feats=img_feats, img_metas=img_metas, prev_bev=prev_bev)
+            out = self.pts_bbox_head.get_bev_features(
+                    mlvl_feats=img_feats, img_metas=img_metas, prev_bev=prev_bev, return_ref_cam_mask=return_ref_cam_mask)
         
-        if bev_embed.shape[1] == self.bev_h * self.bev_w:
-            bev_embed = bev_embed.permute(1, 0, 2)
-        
-        assert bev_embed.shape[0] == self.bev_h * self.bev_w
-        return bev_embed, bev_pos
+        if return_ref_cam_mask:
+            bev_embed, bev_pos, ref_3d, reference_points_cam, bev_mask, pc_range, img_metas, offsets, weights = out
+
+            if bev_embed.shape[1] == self.bev_h * self.bev_w:
+                bev_embed = bev_embed.permute(1, 0, 2)
+            
+            assert bev_embed.shape[0] == self.bev_h * self.bev_w
+            return bev_embed, bev_pos , ref_3d, reference_points_cam, bev_mask, pc_range, img_metas, offsets, weights
+        else:
+            bev_embed, bev_pos = out
+
+            if bev_embed.shape[1] == self.bev_h * self.bev_w:
+                bev_embed = bev_embed.permute(1, 0, 2)
+            
+            assert bev_embed.shape[0] == self.bev_h * self.bev_w
+            return bev_embed, bev_pos
 
     @auto_fp16(apply_to=("img", "prev_bev"))
     def _forward_single_frame_train(
@@ -617,6 +629,7 @@ class UniADTrack(MVXTwoStageDetector):
         return outs_track
 
 
+    #!!!!!!!!bev attn変更５
     def _forward_single_frame_inference(
         self,
         img,
@@ -628,6 +641,7 @@ class UniADTrack(MVXTwoStageDetector):
         l2g_r2=None,
         l2g_t2=None,
         time_delta=None,
+        return_ref_cam_mask=False,
     ):
         """
         img: B, num_cam, C, H, W = img.shape
@@ -651,7 +665,28 @@ class UniADTrack(MVXTwoStageDetector):
         track_instances = Instances.cat([other_inst, active_inst])
 
         # NOTE: You can replace BEVFormer with other BEV encoder and provide bev_embed here
-        bev_embed, bev_pos = self.get_bevs(img, img_metas, prev_bev=prev_bev)
+        res = self.get_bevs(img, img_metas, prev_bev=prev_bev, return_ref_cam_mask=return_ref_cam_mask)
+        if return_ref_cam_mask:
+            bev_embed, bev_pos, ref_3d, reference_points_cam, bev_mask, pc_range, img_metas2, offsets, weights = res
+        else:
+            bev_embed, bev_pos = res
+        
+        print(bev_embed.shape)
+        print(bev_pos.shape)
+        if return_ref_cam_mask:
+            # print(ref_3d.shape)
+            # print(reference_points_cam.shape)
+            # print(bev_mask.shape)
+            # print(pc_range)
+            print('aaaaaaaaaaaafggvs')
+            # print("img_metas[0].keys():", img_metas[0].keys())
+            # print("img_metas2[0].keys():", img_metas2[0].keys())
+
+            if img_metas2 is img_metas:
+                print("Exactly the same object (same id in memory).")
+            else:
+                print("Different list objects.")
+
         det_output = self.pts_bbox_head.get_detections(
             bev_embed, 
             object_query_embeds=track_instances.query,
@@ -663,15 +698,33 @@ class UniADTrack(MVXTwoStageDetector):
         last_ref_pts = det_output["last_ref_points"]
         query_feats = det_output["query_feats"]
 
-        out = {
-            "pred_logits": output_classes,
-            "pred_boxes": output_coords,
-            "ref_pts": last_ref_pts,
-            "bev_embed": bev_embed,
-            "query_embeddings": query_feats,
-            "all_past_traj_preds": det_output["all_past_traj_preds"],
-            "bev_pos": bev_pos,
-        }
+        if return_ref_cam_mask:
+            out = {
+                "pred_logits": output_classes,
+                "pred_boxes": output_coords,
+                "ref_pts": last_ref_pts,
+                "bev_embed": bev_embed,
+                "query_embeddings": query_feats,
+                "all_past_traj_preds": det_output["all_past_traj_preds"],
+                "bev_pos": bev_pos,
+                "ref_3d": ref_3d,
+                "reference_points_cam": reference_points_cam,
+                "bev_mask": bev_mask,
+                "pc_range": pc_range,
+                "img_metas2": img_metas2,
+                "offsets": offsets,
+                "weights": weights,
+            }
+        else:
+            out = {
+                "pred_logits": output_classes,
+                "pred_boxes": output_coords,
+                "ref_pts": last_ref_pts,
+                "bev_embed": bev_embed,
+                "query_embeddings": query_feats,
+                "all_past_traj_preds": det_output["all_past_traj_preds"],
+                "bev_pos": bev_pos,
+            }
 
         """ update track instances with predict results """
         track_scores = output_classes[-1, 0, :].sigmoid().max(dim=-1).values
@@ -712,6 +765,7 @@ class UniADTrack(MVXTwoStageDetector):
         l2g_r_mat=None,
         img_metas=None,
         timestamp=None,
+        return_ref_cam_mask=False,
     ):
         """only support bs=1 and sequential input"""
 
@@ -745,6 +799,7 @@ class UniADTrack(MVXTwoStageDetector):
 
         """ predict and update """
         prev_bev = self.prev_bev
+        # !!!!!!!!bev attn変更６
         frame_res = self._forward_single_frame_inference(
             img,
             img_metas,
@@ -755,6 +810,7 @@ class UniADTrack(MVXTwoStageDetector):
             l2g_r2,
             l2g_t2,
             time_delta,
+            return_ref_cam_mask=return_ref_cam_mask,
         )
 
         self.prev_bev = frame_res["bev_embed"]
@@ -768,6 +824,13 @@ class UniADTrack(MVXTwoStageDetector):
                     "boxes_3d", "scores_3d", "labels_3d", "track_scores", "track_ids"]
         if self.with_motion_head:
             get_keys += ["sdc_boxes_3d", "sdc_scores_3d", "sdc_track_scores", "sdc_track_bbox_results", "sdc_embedding"]
+        
+        # !!!!!!!!!!!!!ここでbev attn可視化
+        # if return_ref_cam_mask:
+        #     get_keys += ["ref_3d", "reference_points_cam", "bev_mask", "pc_range", "img_metas2", "offsets", "weights"]
+        if return_ref_cam_mask:
+            get_keys += ["ref_3d", "reference_points_cam", "bev_mask", "pc_range", "img_metas2"]
+        
         results[0].update({k: frame_res[k] for k in get_keys})
         results = self._det_instances2results(track_instances_fordet, results, img_metas)
         return results

@@ -138,7 +138,7 @@ class BEVFormerTrackHead(DETRHead):
             for m in self.cls_branches:
                 nn.init.constant_(m[-1].bias, bias_init)
     
-    def get_bev_features(self, mlvl_feats, img_metas, prev_bev=None):
+    def get_bev_features(self, mlvl_feats, img_metas, prev_bev=None, return_ref_cam_mask=False):
         bs, num_cam, _, _, _ = mlvl_feats[0].shape
         dtype = mlvl_feats[0].dtype
         bev_queries = self.bev_embedding.weight.to(dtype)
@@ -146,7 +146,7 @@ class BEVFormerTrackHead(DETRHead):
         bev_mask = torch.zeros((bs, self.bev_h, self.bev_w),
                                device=bev_queries.device).to(dtype)
         bev_pos = self.positional_encoding(bev_mask).to(dtype)
-        bev_embed = self.transformer.get_bev_features(
+        res = self.transformer.get_bev_features(
             mlvl_feats,
             bev_queries,
             self.bev_h,
@@ -156,8 +156,14 @@ class BEVFormerTrackHead(DETRHead):
             bev_pos=bev_pos,
             prev_bev=prev_bev,
             img_metas=img_metas,
+            return_ref_cam_mask=return_ref_cam_mask,
         )
-        return bev_embed, bev_pos
+        # !!!!!!!!!bev attn変更３
+        if return_ref_cam_mask:
+            bev_embed, ref_3d, reference_points_cam, bev_mask, pc_range, img_metas, offsets, weights = res
+            return bev_embed, bev_pos, ref_3d, reference_points_cam, bev_mask, pc_range, img_metas, offsets, weights
+        else:
+            return res, bev_pos
 
     def get_detections(
         self, 

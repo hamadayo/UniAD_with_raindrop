@@ -47,6 +47,7 @@ class PerceptionTransformer(BaseModule):
                  rotate_center=[100, 100],
                  **kwargs):
         super(PerceptionTransformer, self).__init__(**kwargs)
+        # !!!!!!!おそらくencoder,decoderを定義
         self.encoder = build_transformer_layer_sequence(encoder)
         self.decoder = build_transformer_layer_sequence(decoder)
         self.embed_dims = embed_dims
@@ -105,7 +106,8 @@ class PerceptionTransformer(BaseModule):
             grid_length=[0.512, 0.512],
             bev_pos=None,
             prev_bev=None,
-            img_metas=None):
+            img_metas=None,
+            return_ref_cam_mask=False):
         """
         obtain bev features.
         """
@@ -175,8 +177,8 @@ class PerceptionTransformer(BaseModule):
 
         feat_flatten = feat_flatten.permute(
             0, 2, 1, 3)  # (num_cam, H*W, bs, embed_dims)
-
-        bev_embed = self.encoder(
+        
+        res = self.encoder(
             bev_queries,
             feat_flatten,
             feat_flatten,
@@ -188,9 +190,14 @@ class PerceptionTransformer(BaseModule):
             prev_bev=prev_bev,
             shift=shift,
             img_metas=img_metas,
+            return_ref_cam_mask=return_ref_cam_mask
         )
-
-        return bev_embed
+        # !!!!!!!!!!!bev attn変更２
+        if return_ref_cam_mask:
+            bev_embed, ref_3d, reference_points_cam, bev_mask, pc_range, img_metas, offsets, weights = res
+            return bev_embed, ref_3d, reference_points_cam, bev_mask, pc_range, img_metas, offsets, weights
+        else:
+          return res
     
     def get_states_and_refs(
         self,

@@ -196,6 +196,18 @@ def exist_corners_in_image_but_not_all(box, intrinsic: np.ndarray, imsize: Tuple
         return True
     else:
         return False
+    
+# !!!!!ここを変更
+scene_name_list = [
+    'scene-0061',
+    'scene-1094',
+]
+# scene_name_list = [
+#     'scene-0916',
+# ]
+# scene_name_list = [
+#     'scene-0103', 'scene-0655', 'scene-0796', 'scene-1077'
+# ]
 
 
 def load_gt(nusc: NuScenes, eval_split: str, box_cls, verbose: bool = False):
@@ -256,18 +268,21 @@ def load_gt(nusc: NuScenes, eval_split: str, box_cls, verbose: bool = False):
     for sample_token in sample_tokens_all:
         scene_token = nusc.get('sample', sample_token)['scene_token']
         scene_record = nusc.get('scene', scene_token)
+
+        if scene_record['name'] in scene_name_list:
+            sample_tokens.append(sample_token)
         
         #!!!!!!!!ここを変更
         # if scene_record['name'] in splits[eval_split]:
         #     sample_tokens.append(sample_token)
         # miniデータセットの場合、スプリットを無効にする
-        if nusc.version.endswith('mini'):
-            # すべてのサンプルを追加
-            sample_tokens.append(sample_token)
-        else:
-            # スプリットに従ってフィルタリング
-            if scene_record['name'] in splits[eval_split]:
-                sample_tokens.append(sample_token)
+        # if nusc.version.endswith('mini'):
+        #     # すべてのサンプルを追加
+        #     sample_tokens.append(sample_token)
+        # else:
+        #     # スプリットに従ってフィルタリング
+        #     if scene_record['name'] in splits[eval_split]:
+        #         sample_tokens.append(sample_token)
 
     all_annotations = EvalBoxes()
 

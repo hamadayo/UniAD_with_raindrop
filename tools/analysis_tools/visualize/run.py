@@ -322,17 +322,17 @@ def main(args):
         # 予測ボックスを可視化するか
         with_pred_box=True,
         # 他の車両や歩行者の予測軌跡を可視化するか
-        with_pred_traj=True,
+        with_pred_traj=False,
         # グラウンドトゥルースボックスを可視化するか
         show_gt_boxes=False,
         # Lidarのデータを可視化するか
         show_lidar=False,
         # コマンドを可視化するか
-        show_command=True,
+        show_command=False,
         # 高精度地図を可視化するか
         show_hd_map=False,
         # 自動車の車両モデルを可視化するか
-        show_sdc_car=True,
+        show_sdc_car=False,
         # 可視化結果の凡例を表示するか
         show_legend=True,
         # 車両の最初の奇跡
@@ -355,7 +355,8 @@ def main(args):
     print(f"Tokens in validation scenes: {len(val_scene_sample_tokens)}")
 
     # prediction.pkl を読み込む
-    pred_data = mmcv.load('/home/yoshi-22/UniAD/output/results_tr.pkl')
+    # pred_data = mmcv.load('/home/yoshi-22/FusionAD/output/results.pkl')
+    pred_data = mmcv.load('/home/yoshi-22/FusionAD/UniAD/output/results.pkl')
     prediction_tokens = {entry['token'] for entry in pred_data['bbox_results']}
     # NuScenesサンプルのトークンセットを取得
     dataset_tokens = {sample['token'] for sample in viser.nusc.sample}

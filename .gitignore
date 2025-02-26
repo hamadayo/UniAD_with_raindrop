@@ -150,3 +150,17 @@ debug/
 *projs/
 
 core.*
+
+dist_test/
+attn_compare_output2/
+result_visualize/
+ckpts/
+data/
+docs/
+output/
+outputs/
+projects/
+resources/
+test/
+UniAD/
+videos/

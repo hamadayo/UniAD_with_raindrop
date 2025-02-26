@@ -169,9 +169,11 @@ class SpatialCrossAttention(BaseModule):
             bs * self.num_cams, l, self.embed_dims)
 
         # Deformable Attentionに分割されたクエリを与え、カメラ視点の画像特徴を参照して特徴を集約
-        queries = self.deformable_attention(query=queries_rebatch.view(bs*self.num_cams, max_len, self.embed_dims), key=key, value=value,
+        # !!!!!!bev atten変更１１
+        queries, sampling_offsets, attention_weights = self.deformable_attention(query=queries_rebatch.view(bs*self.num_cams, max_len, self.embed_dims), key=key, value=value,
                                             reference_points=reference_points_rebatch.view(bs*self.num_cams, max_len, D, 2), spatial_shapes=spatial_shapes,
-                                            level_start_index=level_start_index).view(bs, self.num_cams, max_len, self.embed_dims)
+                                            level_start_index=level_start_index)
+        queries = queries.view(bs, self.num_cams, max_len, self.embed_dims)
         for j in range(bs):
             for i, index_query_per_img in enumerate(indexes):
                 slots[j, index_query_per_img] += queries[j, i, :len(index_query_per_img)]
@@ -184,7 +186,8 @@ class SpatialCrossAttention(BaseModule):
         slots = slots / count[..., None]
         slots = self.output_proj(slots)
 
-        return self.dropout(slots) + inp_residual
+        # !!!!!!!!変更12
+        return self.dropout(slots) + inp_residual, sampling_offsets, attention_weights
 
 
 @ATTENTION.register_module()
@@ -408,4 +411,5 @@ class MSDeformableAttention3D(BaseModule):
         if not self.batch_first:
             output = output.permute(1, 0, 2)
 
-        return output
+        #!!!!!!! bev atten変更１０
+        return output, sampling_offsets, attention_weights

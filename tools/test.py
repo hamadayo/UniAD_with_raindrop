@@ -65,6 +65,154 @@ def overlay_heatmap_on_image(image_bgr: np.ndarray, heatmap_bgr: np.ndarray, alp
     overlaid = cv2.addWeighted(image_bgr, 1 - alpha, heatmap_bgr, alpha, 0)
     return overlaid
 
+def project_points_to_image(points_phys, lidar2img, img_hw):
+    """
+    points_phys: shape (M,3) in physical coords
+    lidar2img: shape(4,4)
+    img_hw: (height, width)
+    return: (u,v, mask) each shape(M,)
+    """
+    M = points_phys.shape[0]
+    # hom
+    ones = points_phys.new_ones((M,1))
+    points_4D = torch.cat([points_phys, ones], dim=-1)  # (M,4)
+    camcoords = points_4D @ lidar2img.T  # (M,4)
+    eps = 1e-5
+    z_ = camcoords[:,2].clamp(min=eps)
+    u_ = camcoords[:,0] / z_
+    v_ = camcoords[:,1] / z_
+    
+    H,W = img_hw
+    mask = (u_>=0)&(v_>=0)&(u_<W)&(v_<H)
+    return u_, v_, mask
+
+def draw_points_with_weights(img_bgr, us, vs, weights, mask):
+    """
+    各pixel(u,v)に weightsでdot可視化
+    """
+    print("us.shape:", us.shape)
+    print("vs.shape:", vs.shape)
+    print("weights.shape:", weights.shape)
+    print("mask.shape:", mask.shape)
+
+    # shapeが(1,M)だった場合を想定
+    if us.dim() == 2 and us.shape[0] == 1:
+        us = us.squeeze(0)        # (M,) にする
+        vs = vs.squeeze(0)        # (M,)
+        weights = weights.squeeze(0)
+        mask = mask.squeeze(0)
+
+    print("us.shape (after):", us.shape)
+    print("mask.shape (after):", mask.shape)
+
+    vis = img_bgr.copy()
+    wmin, wmax = weights.min(), weights.max()
+    rng = wmax - wmin + 1e-6
+    for i in range(len(us)):
+        if not mask[i]:
+            continue
+        x_i = int(us[i].item())
+        y_i = int(vs[i].item())
+        if x_i<0 or y_i<0 or x_i>=vis.shape[1] or y_i>=vis.shape[0]:
+            continue
+        w_01 = (weights[i]-wmin)/rng
+        color = (0, int(255*w_01), int(255*(1-w_01)))  # green->red
+        cv2.circle(vis, (x_i,y_i), 2, color, -1)
+    return vis
+
+def visualize_bevformer_encoder_attention(
+    ref_3d, # shape (1, 4, 40000, 3)
+    reference_points_cam, # shape (6, 1, 40000, 4, 2))
+    bev_mask, # shape (6, 1, 40000, 4)
+    sampling_offsets, # shape (6, 9675, 8, 4, 2, 4, 2)
+    attention_weights, # shape (6, 9675, 8, 4, 8)
+    pc_range, # [x_min, y_min, z_min, x_max, y_max, z_max]
+    img_metas, # list of dict. each dict has 'lidar2img', 'img_shape', etc
+    info_i=None,
+    cam_names=[],
+    cam_out_path=[],
+):
+    """
+    簡易例: 
+    1) ref_3d -> 物理座標
+    2) offsetで x,yを微妙にシフト (実際のMSDeformAttn3Dとは異なる可能性大)
+    3) lidar2img投影
+    4) attention_weightsでカラードット
+    """
+    ref_3d = ref_3d.cuda()
+    sampling_offsets = sampling_offsets.cuda()
+    attention_weights = attention_weights.cuda()
+    pc_range = torch.tensor(pc_range, device=ref_3d.device)
+
+    print('lets shape')
+    print(ref_3d.shape)
+    print(reference_points_cam.shape)
+    print(bev_mask.shape)
+    print(sampling_offsets.shape)
+    print(attention_weights.shape)
+    print(pc_range.shape)
+    print(img_metas[0]['lidar2img'].shape)
+    print(len(img_metas[0]['lidar2img']))
+
+
+    B, D, N, _ = ref_3d.shape
+    # B=1仮定
+    ref_3d_flat = ref_3d[0].view(-1, 3).clone()  # => (D*N,3)
+    x_min,y_min,z_min, x_max,y_max,z_max = pc_range
+    ref_3d_flat[:,0] = ref_3d_flat[:,0]*(x_max - x_min)+x_min
+    ref_3d_flat[:,1] = ref_3d_flat[:,1]*(y_max - y_min)+y_min
+    ref_3d_flat[:,2] = ref_3d_flat[:,2]*(z_max - z_min)+z_min
+
+    B_, N_, nH, nL, nP, _2 = sampling_offsets.shape
+    sampling_offsets_flat = sampling_offsets[0].view(N_*nH*nL*nP, 2)
+    attention_weights_flat = attention_weights[0].view(N_*nH*nL*nP)
+
+    ref_3d_big = ref_3d_flat.unsqueeze(1).repeat(1, nH*nL*nP, 1)  # => (N_, nH*nL*nP, 3)
+    ref_3d_big = ref_3d_big.view(-1,3)
+
+    # flatten sampling_offsets
+    # shape (B,N, nHead,nLevel,nPoint,2) => (N*nHead*nLevel*nPoint,2)
+    sampling_offsets_flat = sampling_offsets[0].view(-1,2)
+    attn_weights_flat = attention_weights[0].view(-1)
+    
+    # 例: min(...) だけ対応付け
+    M = min(ref_3d_flat.size(0), sampling_offsets_flat.size(0))
+    ref_3d_flat = ref_3d_flat[:M]
+    dxdy = sampling_offsets_flat[:M]
+    w_ = attn_weights_flat[:M]
+    
+    # XYにdx,dy足す(実際にはnormalizerやlevel別処理が必要)
+    # ref_3d_flat[:,0] += dxdy[:,0]
+    # ref_3d_flat[:,1] += dxdy[:,1]
+
+    # カメラごとに投影
+    for cam_idx, cam_meta in enumerate(img_metas):
+        # カメラパラメータ
+        lidar2img = torch.tensor(cam_meta['lidar2img'], dtype=torch.float32, device=ref_3d_flat.device)
+        (H,W,_) = 900, 1600, 3
+        u_, v_, mask = project_points_to_image(ref_3d_big, lidar2img, (H,W))
+        # 画像読み込み
+        img_path = info_i['cams'][cam_names[cam_idx]]['data_path']
+        print(f"Reading image: {img_path}")
+        img_bgr = cv2.imread(img_path)
+        if img_bgr is None:
+            print(f"cannot read {img_path}")
+            continue
+
+        # draw
+        vis_img = draw_points_with_weights(img_bgr, u_, v_, w_, mask)
+        out_name = os.path.basename(img_path)
+        # ディレクトリが存在するかを事前にチェック
+        if not os.path.exists(cam_out_path[cam_idx]):
+            os.makedirs(cam_out_path[cam_idx], exist_ok=True)
+            print(f"Directory created: {cam_out_path[cam_idx]}")
+        else:
+            print(f"Directory already exists: {cam_out_path[cam_idx]}")
+        out_path = os.path.join(cam_out_path[cam_idx], out_name)
+        cv2.imwrite(out_path, vis_img)
+
+        print(f"Saved {out_path}")
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description='MMDet を用いてモデルのテスト（および評価）を実行するためのスクリプト')
@@ -316,12 +464,11 @@ def main():
 
     # !!!!!!!個々変更
     valid_names = [
-        # 'img_backbone.layer4.2'
-        'pts_bbox_head.transformer.encoder.layers.5.attentions.1.deformable_attention.sampling_offsets',
-        'pts_bbox_head.transformer.encoder.layers.5.attentions.1.deformable_attention.attention_weights',
-        'pts_bbox_head.transformer.decoder.layers.5.attentions.1.sampling_offsets',
-        'pts_bbox_head.transformer.decoder.layers.5.attentions.1.attention_weights',
+        'img_backbone.layer4.2'
     ]
+
+    #!!!!! bev attn変更９
+    return_ref_cam_mask = False
 
     for name, module in model.named_modules():
         # print(f'Registering hook for {name}')
@@ -356,13 +503,16 @@ def main():
             model.cuda(),
             device_ids=[torch.cuda.current_device()],
             broadcast_buffers=False)
-        outputs = my_custom_multi_gpu_test(model, data_loader, args.tmpdir,
+        # !!!!!ここをmy_にするとheatmap取ってこれる
+        # outputs = my_custom_multi_gpu_test(model, data_loader, args.tmpdir,
+        #                                 args.gpu_collect, return_ref_cam_mask=return_ref_cam_mask)
+        outputs = custom_multi_gpu_test(model, data_loader, args.tmpdir,
                                         args.gpu_collect)
         print('iiiiiiiiiiiiiii')
 
     rank, _ = get_dist_info()
 
-    pkl_path = '/home/yoshi-22/UniAD/data/infos/nuscenes_infos_temporal_val_before.pkl'
+    pkl_path = '/home/yoshi-22/FusionAD/UniAD/data/infos/nuscenes_infos_temporal_val.pkl'
     with open(pkl_path, 'rb') as f:
         data = pickle.load(f)
     
@@ -388,13 +538,8 @@ def main():
 
 
     # !!!!!!!個々変更
-    name = 'pts_bbox_head.transformer.encoder.layers.5.attentions.1.deformable_attention.attention_weights'
-    my_activations = outputs['my_activations']
-
-    print(my_activations.keys())
-    print(type(my_activations[name].keys()))
-    print(len(my_activations[name]))
-    print(my_activations[name].keys())
+    # name = 'img_backbone.layer4.2'
+    # my_activations = outputs['my_activations']
 
     # for i in sorted(my_activations[name].keys()):
     #     if 79 <= i <= 119:
@@ -407,78 +552,50 @@ def main():
     #         feat_i = my_activations[name][i]
     #         print(f"Processing frame {i}")
 
-
+    #     feat_i = my_activations[name][i]
+    #     print(f"Processing frame {i}")
     #     info_i = infos[i]
 
-    #     for cam_idx in range(6):
-    #         single_feat_map = feat_i[cam_idx]
-    #         # カメラごとのファイル名に cam_names[cam_idx] を入れる
-    #         heatmap_bgr = tensor_to_heatmap(single_feat_map)
+        # visualize_bevformer_encoder_attention(
+        #     outputs['bbox_results'][i]['ref_3d'],
+        #     outputs['bbox_results'][i]['reference_points_cam'],
+        #     outputs['bbox_results'][i]['bev_mask'],
+        #     outputs['bbox_results'][i]['offsets'],
+        #     outputs['bbox_results'][i]['weights'],
+        #     outputs['bbox_results'][i]['pc_range'],
+        #     outputs['bbox_results'][i]['img_metas2'],
+        #     infos[i],
+        #     cam_names=cam_names,
+        #     cam_out_path=cam_out_path
+        # )
 
-    #         # 入力画像のパス
-    #         img_path = info_i['cams'][cam_names[cam_idx]]['data_path']
-    #         print(f"Reading image: {img_path}")
-    #         image_bgr = cv2.imread(img_path)
-    #         if image_bgr is None:
-    #             print(f"Failed to read image: {img_path}")
-    #             continue
+        # for cam_idx in range(6):
+        #     single_feat_map = feat_i[cam_idx]
+        #     # カメラごとのファイル名に cam_names[cam_idx] を入れる
+        #     heatmap_bgr = tensor_to_heatmap(single_feat_map)
 
-    #         # feat[cam_idx] → (C, H, W)
-    #         overlaid = overlay_heatmap_on_image(image_bgr, heatmap_bgr, alpha=0.5)
+        #     # 入力画像のパス
+        #     img_path = info_i['cams'][cam_names[cam_idx]]['data_path']
+        #     print(f"Reading image: {img_path}")
+        #     image_bgr = cv2.imread(img_path)
+        #     if image_bgr is None:
+        #         print(f"Failed to read image: {img_path}")
+        #         continue
 
-    #         # 出力ファイル名
-    #         out_name = os.path.basename(img_path)
-    #         # ディレクトリが存在するかを事前にチェック
-    #         if not os.path.exists(cam_out_path[cam_idx]):
-    #             os.makedirs(cam_out_path[cam_idx], exist_ok=True)
-    #             print(f"Directory created: {cam_out_path[cam_idx]}")
-    #         else:
-    #             print(f"Directory already exists: {cam_out_path[cam_idx]}")
-    #         out_path = os.path.join(cam_out_path[cam_idx], out_name)
-    #         cv2.imwrite(out_path, overlaid)
-    #         print(f"Heatmap saved to {out_path}")
+        #     # feat[cam_idx] → (C, H, W)
+        #     overlaid = overlay_heatmap_on_image(image_bgr, heatmap_bgr, alpha=0.5)
 
-    for i in sorted(my_activations[name].keys()):
-        if 79 <= i <= 119:
-            feat_i = my_activations[name][i + 41]
-            print(f"Processing frame {i, i + 41}")
-        elif 120 <= i <= 160:
-            feat_i = my_activations[name][i - 41]
-            print(f"Processing frame {i, i -41}")
-        else:
-            feat_i = my_activations[name][i]
-            print(f"Processing frame {i}")
-
-
-        info_i = infos[i]
-
-        for cam_idx in range(6):
-            single_feat_map = feat_i[cam_idx]
-            # カメラごとのファイル名に cam_names[cam_idx] を入れる
-            heatmap_bgr = tensor_to_heatmap(single_feat_map)
-
-            # 入力画像のパス
-            img_path = info_i['cams'][cam_names[cam_idx]]['data_path']
-            print(f"Reading image: {img_path}")
-            image_bgr = cv2.imread(img_path)
-            if image_bgr is None:
-                print(f"Failed to read image: {img_path}")
-                continue
-
-            # feat[cam_idx] → (C, H, W)
-            overlaid = overlay_heatmap_on_image(image_bgr, heatmap_bgr, alpha=0.5)
-
-            # 出力ファイル名
-            out_name = os.path.basename(img_path)
-            # ディレクトリが存在するかを事前にチェック
-            if not os.path.exists(cam_out_path[cam_idx]):
-                os.makedirs(cam_out_path[cam_idx], exist_ok=True)
-                print(f"Directory created: {cam_out_path[cam_idx]}")
-            else:
-                print(f"Directory already exists: {cam_out_path[cam_idx]}")
-            out_path = os.path.join(cam_out_path[cam_idx], out_name)
-            cv2.imwrite(out_path, overlaid)
-            print(f"Heatmap saved to {out_path}")
+        #     # 出力ファイル名
+        #     out_name = os.path.basename(img_path)
+        #     # ディレクトリが存在するかを事前にチェック
+        #     if not os.path.exists(cam_out_path[cam_idx]):
+        #         os.makedirs(cam_out_path[cam_idx], exist_ok=True)
+        #         print(f"Directory created: {cam_out_path[cam_idx]}")
+        #     else:
+        #         print(f"Directory already exists: {cam_out_path[cam_idx]}")
+        #     out_path = os.path.join(cam_out_path[cam_idx], out_name)
+        #     cv2.imwrite(out_path, overlaid)
+        #     print(f"Heatmap saved to {out_path}")
 
     if rank == 0:
         if args.out:

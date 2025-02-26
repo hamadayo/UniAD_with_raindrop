@@ -402,6 +402,18 @@ def load_prediction(result_path: str, max_boxes_per_sample: int, box_cls, verbos
 
     return all_results, meta
 
+# !!!!!ここを変更
+scene_name_list = [
+    'scene-0061',
+    'scene-1094',
+]
+# scene_name_list = [
+#     'scene-0916',
+# ]
+# scene_name_list = [
+#     'scene-0103', 'scene-0655', 'scene-0796', 'scene-1077'
+# ]
+
 def load_gt(nusc: NuScenes, eval_split: str, box_cls, verbose: bool = False, category_convert_type='detection_category'):
     """
     Loads ground truth boxes from DB.
@@ -460,12 +472,15 @@ def load_gt(nusc: NuScenes, eval_split: str, box_cls, verbose: bool = False, cat
         scene_token = nusc.get('sample', sample_token)['scene_token']
         scene_record = nusc.get('scene', scene_token)
         # !!!!!!!ここを変更
+        if scene_record['name'] in scene_name_list:
+            sample_tokens.append(sample_token)
         # if scene_record['name'] in splits[eval_split]:
         #     sample_tokens.append(sample_token)
-        if nusc.version.endswith('mini'):
-            sample_tokens.append(sample_token)
-        elif scene_record['name'] in splits[eval_split]:
-            sample_tokens.append(sample_token)
+        # if nusc.version.endswith('mini'):
+        #     sample_tokens.append(sample_token)
+        # elif scene_record['name'] in splits[eval_split]:
+        #     sample_tokens.append(sample_token)
+
 
     all_annotations = EvalBoxes()
 
